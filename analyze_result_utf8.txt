@@ -1,0 +1,41 @@
+﻿Analyzing api_service.dart...                                   
+
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:214:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:225:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:228:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:240:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:251:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:284:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:296:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:299:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:323:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:334:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:352:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:355:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:365:11 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:372:9 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:376:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:384:7 - avoid_print
+   info - Angle brackets will be interpreted as HTML - lib\services\api_service.dart:390:58 - unintended_html_in_doc_comment
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:394:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:400:7 - avoid_print
+   info - Don't invoke 'print' in production code - lib\services\api_service.dart:432:7 - avoid_print
+
+flutter : 20 issues 
+found. (ran in 0.4s)
+At line:1 char:1
++ flutter analyze lib/serv
+ices/api_service.dart 
+2>&1 | Out-File -FilePa 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo        
+      : NotSpecified: (2  
+  0 issues found. (ran    
+ in 0.4s):String) [],     
+RemoteException
+    + FullyQualifiedError 
+   Id : NativeCommandErr  
+  or
+ 

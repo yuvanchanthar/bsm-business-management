@@ -1,0 +1,11 @@
+Analyzing Bsm_app...
+
+  error - test\widget_test.dart:16:35 - The named parameter 'tokenService' is required, but there's no corresponding argument. Try adding the required argument. - missing_required_argument
+warning - lib\services\pdf_service.dart:4:8 - Unused import: 'package:printing/printing.dart'. Try removing the import directive. - unused_import
+   info - lib\screens\login_screen.dart:236:38 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+   info - lib\screens\signup_screen.dart:222:38 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+   info - lib\screens\splash_screen.dart:61:26 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+   info - lib\screens\splash_screen.dart:61:30 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+   info - lib\screens\splash_screen.dart:64:44 - Unnecessary use of multiple underscores. Try using '_'. - unnecessary_underscores
+
+7 issues found.
