@@ -74,6 +74,9 @@ class LedgerEntry {
   final String description;
   final double amount;
   final String? id;
+  final String? deliveryId;
+  final String? invoiceId;
+  final String? templateId;
 
   LedgerEntry({
     required this.date,
@@ -81,9 +84,29 @@ class LedgerEntry {
     required this.description,
     required this.amount,
     this.id,
+    this.deliveryId,
+    this.invoiceId,
+    this.templateId,
   });
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
+    // Backend now returns deliveryId, invoiceId, templateId directly in the ledger entry object.
+    // We map these directly to ensure they survive end-to-end.
+    final String? deliveryId = json['deliveryId']?.toString();
+    final String? invoiceId = json['invoiceId']?.toString();
+    final String? templateId = json['templateId']?.toString();
+    final String? id = (json['_id'] ?? json['id'])?.toString();
+
+    print('--------------------------------------------------');
+    print('[LedgerEntry.fromJson] DEBUG LOG');
+    print('TYPE: ${json['type']}');
+    print('DELIVERY_ID: $deliveryId');
+    print('INVOICE_ID: $invoiceId');
+    print('TEMPLATE_ID: $templateId');
+    print('TXN_ID: $id');
+    print('RAW_JSON: $json');
+    print('--------------------------------------------------');
+
     return LedgerEntry(
       date: json['date'] != null 
           ? DateTime.tryParse(json['date']) ?? DateTime.now() 
@@ -101,7 +124,10 @@ class LedgerEntry {
             json['finalAmount'] ??
             json['invoiceAmount'],
       ),
-      id: json['id']?.toString(),
+      id: id,
+      deliveryId: deliveryId,
+      invoiceId: invoiceId,
+      templateId: templateId,
     );
   }
 }

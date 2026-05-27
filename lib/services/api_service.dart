@@ -113,7 +113,7 @@ class ApiService {
   // ── Delivery endpoints ───────────────────────────────────────────────────
 
   /// POST /delivery
-  Future<bool> createDelivery(Delivery delivery) async {
+  Future<Delivery?> createDelivery(Delivery delivery) async {
     try {
       final deliveryData = delivery.toJson();
       print("--------------------------------------------------");
@@ -122,10 +122,40 @@ class ApiService {
       print("[DEBUG] amount: ${deliveryData['amount']} (Type: ${deliveryData['amount'].runtimeType})");
       print("[DEBUG] Full payload: $deliveryData");
       print("--------------------------------------------------");
-      await _dio.post('/delivery', data: deliveryData);
-      return true;
+      final response = await _dio.post('/delivery', data: deliveryData);
+      
+      if (response.data != null && response.data is Map<String, dynamic>) {
+        return Delivery.fromJson(response.data as Map<String, dynamic>);
+      }
+      return null;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
+    }
+  }
+  
+  /// GET /delivery/:id
+  Future<Delivery?> getDeliveryById(String id) async {
+    try {
+      final response = await _dio.get('/delivery/$id');
+      if (response.data != null && response.data is Map<String, dynamic>) {
+        return Delivery.fromJson(response.data as Map<String, dynamic>);
+      }
+      return null;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PUT /invoices/:id/template
+  Future<bool> updateInvoiceTemplate(String invoiceId, String templateId) async {
+    try {
+      await _dio.put('/invoices/$invoiceId/template', data: {
+        'templateId': templateId,
+      });
+      return true;
+    } on DioException catch (e) {
+      print('Failed to update invoice template: $e');
+      return false;
     }
   }
 
@@ -150,6 +180,16 @@ class ApiService {
       print("[DEBUG] amount: ${deliveryData['amount']} (Type: ${deliveryData['amount'].runtimeType})");
       print("--------------------------------------------------");
       await _dio.put('/delivery/$id', data: deliveryData);
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PATCH /delivery/:id/status
+  Future<bool> updateDeliveryStatus(String id, String status) async {
+    try {
+      await _dio.patch('/delivery/$id/status', data: {'status': status});
       return true;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -213,6 +253,9 @@ class ApiService {
   Future<CustomerLedgerModel> getCustomerLedger(String id) async {
     try {
       final response = await _dio.get('/customers/$id/ledger');
+      print('========== LEDGER API RESPONSE DEBUG ==========');
+      print(response.data);
+      print('==============================================');
       return CustomerLedgerModel.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -300,6 +343,18 @@ class ApiService {
   }
 
   // ── Attendance endpoints ──────────────────────────────────────────────────
+
+  /// PUT /attendance/:id
+  Future<bool> updateAttendance(String id, String status) async {
+    try {
+      await _dio.put('/attendance/$id', data: {
+        'status': status,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
 
   /// POST /attendance  (submit or upsert)
   Future<bool> submitAttendance(DateTime date, List<AttendanceEntry> entries) async {
@@ -432,7 +487,8 @@ class ApiService {
       final reportResponse = await _dio.get('/labours/report', queryParameters: {'labourId': labourId});
       final reportRaw = reportResponse.data;
 
-      print("FULL RESPONSE: $reportRaw");
+      print("RAW LABOUR REPORT:");
+      print(reportRaw);
 
       // 2. Fetch Payment History (Optional)
       List<PaymentModel> paymentList = [];
@@ -452,25 +508,49 @@ class ApiService {
       try {
         final attendanceResponse = await _dio.get('/attendance');
         final attendanceRaw = attendanceResponse.data;
-        if (attendanceRaw is List) {
-          for (final dayRecord in attendanceRaw) {
-             if (dayRecord is Map<String, dynamic>) {
-                final dateStr = dayRecord['date']?.toString() ?? '';
-                final dayEntries = dayRecord['attendance'];
-                if (dayEntries is List) {
-                   for (final entry in dayEntries) {
-                      if (entry['labourId'] == labourId || entry['_id'] == labourId) {
-                         attendanceList.add(AttendanceRecord(
-                             date: dateStr,
-                             status: entry['status']?.toString() ?? 'absent',
-                             wage: (entry['wage'] as num?)?.toDouble() ?? 0.0,
-                         ));
-                      }
-                   }
-                }
-             }
+        final listRaw = _parseList(attendanceRaw);
+        
+        print("CURRENT LABOUR ID: $labourId");
+        
+        List<Map<String, dynamic>> flatRecords = [];
+        for (final item in listRaw) {
+          if (item is Map<String, dynamic>) {
+            if (item.containsKey('attendance') && item['attendance'] is List) {
+               final dateStr = item['date']?.toString() ?? '';
+               for (final entry in item['attendance']) {
+                 flatRecords.add({
+                   "recordId": entry['_id']?.toString() ?? item['_id']?.toString() ?? '',
+                   "id": (entry['labourId'] ?? entry['_id'])?.toString() ?? '',
+                   "status": entry['status']?.toString() ?? 'absent',
+                   "date": dateStr,
+                   "wage": (entry['wage'] as num?)?.toDouble() ?? 0.0,
+                 });
+               }
+            } else {
+               flatRecords.add({
+                 "recordId": item['_id']?.toString() ?? '',
+                 "id": (item['labourId'] ?? item['_id'])?.toString() ?? '',
+                 "status": item['status']?.toString() ?? 'absent',
+                 "date": item['date']?.toString() ?? '',
+                 "wage": (item['wage'] as num?)?.toDouble() ?? 0.0,
+               });
+            }
           }
         }
+
+        print("ATTENDANCE:");
+        print(flatRecords.map((e) => {"id": e["id"], "status": e["status"], "date": e["date"]}).toList());
+
+        final filtered = flatRecords.where((a) => a["id"].toString().trim() == labourId.toString().trim()).toList();
+        print("FILTERED COUNT: ${filtered.length}");
+
+        attendanceList = filtered.map((e) => AttendanceRecord(
+           id: e["recordId"] ?? '',
+           date: e["date"],
+           status: e["status"],
+           wage: e["wage"],
+        )).toList();
+
         // sort by date descending
         attendanceList.sort((a, b) => b.date.compareTo(a.date));
       } catch(e) {
@@ -482,24 +562,61 @@ class ApiService {
 
       if (reportRaw is Map<String, dynamic>) {
         final List reportList = reportRaw['report'] ?? [];
-        print("REPORT LIST: $reportList");
 
-        if (reportList.isEmpty) {
-          throw Exception("No data available");
+        print("[ApiService] Report list length: ${reportList.length}");
+        print("[ApiService] Looking for labourId: $labourId");
+
+        // Find the correct labour in the report list
+        final reportData = reportList.firstWhere(
+          (item) =>
+              (item['labourId'] ?? item['_id'])?.toString().trim() ==
+              labourId.trim(),
+          orElse: () => <String, dynamic>{},
+        );
+
+        if ((reportData as Map).isEmpty) {
+          print("[ApiService] WARNING: Labour $labourId not found in report list.");
+          print("[ApiService] Available IDs: ${reportList.map((e) => (e['labourId'] ?? e['_id'])?.toString()).toList()}");
+        } else {
+          print("[ApiService] Found reportData: $reportData");
         }
 
-        final totals = reportRaw['totals'] as Map<String, dynamic>? ?? {};
+        // ── FLUTTER-ONLY FIX: /labours/report doesn't return dailyWage/role ──
+        // Fetch from /labour-master/:id which always has these fields.
+        double masterDailyWage = 0;
+        String masterRole = '';
+        try {
+          final masterResponse = await _dio.get('/labour-master/$labourId');
+          final masterData = masterResponse.data;
+          print("[ApiService] Labour master data: $masterData");
+          if (masterData is Map<String, dynamic>) {
+            masterDailyWage = (masterData['dailyWage'] as num?)?.toDouble() ?? 0.0;
+            masterRole = masterData['role']?.toString() ?? '';
+          }
+        } catch (e) {
+          print("[ApiService] Could not fetch labour-master for wage: $e");
+        }
 
-        // Access first item
-        final reportData = reportList.isNotEmpty ? reportList[0] as Map<String, dynamic> : <String, dynamic>{};
+        // Prefer master record for dailyWage/role (report endpoint doesn't include them)
+        final rawDailyWage = masterDailyWage > 0
+            ? masterDailyWage
+            : (reportData['dailyWage'] ?? reportData['daily_wage'] ?? reportData['wage'] ?? 0);
+        final rawRole = masterRole.isNotEmpty
+            ? masterRole
+            : (reportData['role']?.toString() ?? '');
+
+        print("PARSED DAILYWAGE: $rawDailyWage");
+        print("PARSED ROLE: $rawRole");
 
         summaryMap = {
           ...reportData,
-          'labourId': reportData['labourId']?.toString() ?? reportData['_id']?.toString() ?? labourId,
-          'totalEarned': totals['totalEarned'] ?? reportData['totalEarned'] ?? 0,
-          'totalPaid': totals['totalPaid'] ?? reportData['totalPaid'] ?? 0,
-          'pendingBalance': totals['totalPending'] ?? totals['pendingBalance'] ?? reportData['pendingBalance'] ?? 0,
-          'attendance': [], // We use our own list instead
+          'labourId':      reportData['labourId']?.toString() ?? reportData['_id']?.toString() ?? labourId,
+          'role':          rawRole,
+          'dailyWage':     rawDailyWage,
+          'totalEarned':   reportData['totalEarned'] ?? reportData['earned'] ?? 0,
+          'totalPaid':     reportData['totalPaid'] ?? reportData['paid'] ?? 0,
+          'pendingBalance': reportData['pendingBalance'] ?? reportData['balance'] ?? 0,
+          'attendance': [],
           'payments': [],
         };
       } else {
@@ -509,6 +626,9 @@ class ApiService {
       // 5. Build model
       final report = LabourDetailReport.fromJson(summaryMap)
           .copyWith(payments: paymentList, attendance: attendanceList);
+
+      print("[ApiService] Final report.dailyWage = ${report.dailyWage}");
+      print("[ApiService] Final report.role = ${report.role}");
 
       return report;
     } on DioException catch (e) {

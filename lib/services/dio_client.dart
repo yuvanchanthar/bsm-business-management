@@ -5,7 +5,7 @@ import 'token_service.dart';
 /// Centralized Dio client with auth + logging interceptors.
 /// Call [DioClient.instance] after [TokenService.getInstance()] resolves.
 class DioClient {
-  static const String _baseUrl = 'http://192.168.1.38:5000/api';
+  static const String _baseUrl = 'http://10.102.142.121:5000/api';
 
   static Dio? _dio;
 

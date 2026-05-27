@@ -11,7 +11,10 @@
 double _num(Map<String, dynamic> json, List<String> keys) {
   for (final k in keys) {
     final v = json[k];
-    if (v != null) return (v as num).toDouble();
+    if (v != null) {
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v) ?? 0.0;
+    }
   }
   return 0.0;
 }
@@ -80,7 +83,7 @@ class LabourSalaryReport {
   final String name;
   final String role;
   final double dailyWage;
-  final int daysWorked;      // ← new field
+  final double daysWorked;      // ← new field
   final double totalEarned;
   final double totalPaid;
   final double balance;      // mapped from "pendingBalance" OR "balance"
@@ -108,7 +111,7 @@ class LabourSalaryReport {
       // dailyWage may be nested under the labour master object
       dailyWage: _num(json, ['dailyWage', 'daily_wage', 'wage']),
       // daysWorked
-      daysWorked: (json['daysWorked'] ?? json['days_worked'] ?? 0) as int,
+      daysWorked: ((json['daysWorked'] ?? json['days_worked']) as num?)?.toDouble() ?? 0.0,
       // Backend may name this field differently
       totalEarned: _num(json, ['totalEarned', 'earned', 'total_earned']),
       totalPaid:   _num(json, ['totalPaid',   'paid',   'total_paid']),
@@ -130,7 +133,7 @@ class LabourDetailReport {
   final String role;
   final String phone;
   final double dailyWage;
-  final int daysWorked;
+  final double daysWorked;
   final double totalEarned;
   final double totalPaid;
   final double balance;
@@ -153,18 +156,26 @@ class LabourDetailReport {
 
   factory LabourDetailReport.fromJson(Map<String, dynamic> json) {
     // ignore: avoid_print
+    print('[LabourDetailReport] RAW JSON:');
+    print(json);
     print('[LabourDetailReport] parsing summary fields: '
         'earned=${json['totalEarned'] ?? json['earned']} '
         'paid=${json['totalPaid'] ?? json['paid']} '
-        'balance=${json['pendingBalance'] ?? json['balance']}');
+        'balance=${json['pendingBalance'] ?? json['balance']} '
+        'dailyWage=${json['dailyWage'] ?? json['wage'] ?? json['daily_wage']} '
+        'role=${json['role']}');
+
+    final parsedDailyWage = _num(json, ['dailyWage', 'daily_wage', 'wage']);
+    // ignore: avoid_print
+    print('PARSED DAILYWAGE: $parsedDailyWage');
 
     return LabourDetailReport(
       labourId: json['labourId']?.toString() ?? json['_id']?.toString() ?? '',
       name:     json['name']  ?? '',
-      role:     json['role']  ?? '',
-      phone:    json['phone'] ?? '',
-      dailyWage:   _num(json, ['dailyWage', 'daily_wage', 'wage']),
-      daysWorked:  (json['daysWorked'] ?? json['days_worked'] ?? 0) as int,
+      role:     json['role']?.toString()  ?? '',
+      phone:    json['phone']?.toString() ?? '',
+      dailyWage:   parsedDailyWage,
+      daysWorked:  ((json['daysWorked'] ?? json['days_worked']) as num?)?.toDouble() ?? 0.0,
       totalEarned: _num(json, ['totalEarned', 'earned', 'total_earned']),
       totalPaid:   _num(json, ['totalPaid',   'paid',   'total_paid']),
       // ⚠️ CRITICAL: try pendingBalance first
@@ -206,20 +217,28 @@ class LabourDetailReport {
 // ── AttendanceRecord (per-day row inside LabourDetailReport) ──────────────────
 
 class AttendanceRecord {
+  final String id;
   final String date;
-  final String status;   // "present" | "absent"
+  final String status;   // "full_day" | "half_day" | "absent"
   final double wage;     // earned for that day (0 if absent)
 
   AttendanceRecord({
+    this.id = '',
     required this.date,
     required this.status,
     required this.wage,
   });
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
+    String parsedStatus = json['status']?.toString() ?? 'absent';
+    if (parsedStatus == 'present') {
+      parsedStatus = 'full_day';
+    }
+
     return AttendanceRecord(
+      id:     json['_id']?.toString() ?? '',
       date:   json['date']?.toString()   ?? '',
-      status: json['status']?.toString() ?? 'absent',
+      status: parsedStatus,
       wage:   _num(json, ['wage', 'dailyWage', 'amount']),
     );
   }

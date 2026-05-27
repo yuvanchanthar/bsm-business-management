@@ -148,35 +148,66 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
 
   Widget _buildReportCard() {
     final r = _report!;
-    final attendanceRate = r.totalLabours == 0 ? 0.0 : r.presentCount / r.totalLabours;
+    // Attendance rate based on worked days (full=1, half=0.5) vs total labours
+    final attendanceRate =
+        r.totalLabours == 0 ? 0.0 : (r.daysWorked / r.totalLabours).clamp(0.0, 1.0);
+
+    final workedLabel = r.daysWorked % 1 == 0
+        ? '${r.daysWorked.toInt()}'
+        : r.daysWorked.toStringAsFixed(1);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('SUMMARY', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 1.2)),
+        Text('SUMMARY',
+            style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textSecondary,
+                letterSpacing: 1.2)),
         const SizedBox(height: 12),
-        // 2x2 grid of stat cards
+
+        // Row 1: Total + Full Days
         Row(
           children: [
             _buildStatTile('TOTAL', '${r.totalLabours}', AppColors.textPrimary, Icons.people_outline),
             const SizedBox(width: 12),
-            _buildStatTile('PRESENT', '${r.presentCount}', Colors.green, Icons.check_circle_outline),
+            _buildStatTile('FULL DAYS', '${r.fullDayCount}', Colors.green, Icons.check_circle_outline),
           ],
         ),
         const SizedBox(height: 12),
+
+        // Row 2: Half Days + Absent
         Row(
           children: [
-            _buildStatTile('ABSENT', '${r.absentCount}', Colors.red, Icons.cancel_outlined),
+            _buildStatTile('HALF DAYS', '${r.halfDayCount}', Colors.orange, Icons.timelapse_outlined),
             const SizedBox(width: 12),
-            _buildStatTile('TOTAL WAGE', '₹${r.totalWage.toStringAsFixed(0)}', AppColors.primaryGreen, Icons.payments_outlined),
+            _buildStatTile('ABSENT', '${r.absentCount}', Colors.red, Icons.cancel_outlined),
           ],
         ),
+        const SizedBox(height: 12),
+
+        // Row 3: Worked Days + Total Wage
+        Row(
+          children: [
+            _buildStatTile('WORKED DAYS', workedLabel, AppColors.primaryGreen, Icons.work_outline),
+            const SizedBox(width: 12),
+            _buildStatTile('TOTAL WAGE', '₹${r.totalWage.toStringAsFixed(0)}', Colors.indigo, Icons.payments_outlined),
+          ],
+        ),
+
         const SizedBox(height: 24),
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -184,10 +215,21 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Attendance Rate', style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text('Attendance Rate',
+                      style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
                   Text('${(attendanceRate * 100).toStringAsFixed(1)}%',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen, fontSize: 14)),
+                      style: GoogleFonts.inter(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryGreen,
+                          fontSize: 14)),
                 ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Full Day = 1 · Half Day = 0.5 · Absent = 0',
+                style: GoogleFonts.inter(
+                    fontSize: 10, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 10),
               ClipRRect(

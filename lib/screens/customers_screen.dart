@@ -8,6 +8,8 @@ import '../models/customer_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 
+import '../widgets/notification_bell.dart';
+
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
 
@@ -125,10 +127,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: AppColors.primaryGreen),
-            onPressed: () {},
-          ),
+          const NotificationBell(),
         ],
       ),
       body: SafeArea(

@@ -4,6 +4,9 @@ import '../core/app_colors.dart';
 import '../models/payment_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
+import '../services/sms_settings_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 class AddPaymentScreen extends StatefulWidget {
   final String labourId;
@@ -20,6 +23,33 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
   final _noteController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = false;
+  
+  double _oldBalance = 0;
+  String _phone = '';
+  final SmsSettingsService _smsService = SmsSettingsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLabourDetails();
+  }
+
+  Future<void> _fetchLabourDetails() async {
+    try {
+      final tokenService = await TokenService.getInstance();
+      final apiService = ApiService(tokenService);
+      await _smsService.init();
+      final report = await apiService.getLabourDetailReport(widget.labourId);
+      if (mounted) {
+        setState(() {
+          _oldBalance = report.balance;
+          _phone = report.phone;
+        });
+      }
+    } catch (e) {
+      debugPrint('Silent skip: Labour details fetch failed: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -62,11 +92,26 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
         note: _noteController.text.trim(),
       );
       await apiService.addPayment(payment);
+
+      // Re-fetch details to get new balance
+      double newBalance = 0;
+      try {
+        final updatedReport = await apiService.getLabourDetailReport(widget.labourId);
+        newBalance = updatedReport.balance;
+      } catch (e) {
+        debugPrint('Failed to fetch updated balance: $e');
+        newBalance = _oldBalance - payment.amount;
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('✅ Payment recorded successfully'), backgroundColor: Colors.green),
         );
-        Navigator.pop(context, true);
+        
+        // Trigger SMS flow
+        await _sendPaymentSMS(_oldBalance, payment.amount, newBalance);
+        
+        if (mounted) Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -79,6 +124,11 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final String amountText = _amountController.text.trim();
+    final double enteredAmount = double.tryParse(amountText) ?? 0;
+    final double remainingBalance = _oldBalance - enteredAmount;
+    final bool isOverpaid = enteredAmount > _oldBalance && _oldBalance > 0;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -119,10 +169,21 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
               ),
               const SizedBox(height: 28),
 
+              // Current Balance Card
+              _buildBalanceSummaryCard(
+                'Current Balance',
+                _oldBalance,
+                Colors.blue,
+              ),
+              const SizedBox(height: 24),
+
               _buildLabel('Payment Amount (₹)'),
               TextFormField(
                 controller: _amountController,
                 keyboardType: TextInputType.number,
+                onChanged: (_) {
+                  if (mounted) setState(() {});
+                },
                 style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
                 decoration: InputDecoration(
                   hintText: '0',
@@ -142,6 +203,29 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                   return null;
                 },
               ),
+              
+              if (amountText.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _buildBalanceSummaryCard(
+                  'Amount Paid',
+                  enteredAmount,
+                  isOverpaid ? Colors.red : AppColors.primaryGreen,
+                ),
+                const SizedBox(height: 12),
+                _buildBalanceSummaryCard(
+                  'Remaining Balance',
+                  remainingBalance,
+                  remainingBalance < 0 ? Colors.red : AppColors.primaryGreen,
+                ),
+                if (isOverpaid)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 4),
+                    child: Text(
+                      'Entered amount exceeds pending balance',
+                      style: GoogleFonts.inter(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 20),
 
               _buildLabel('Payment Date'),
@@ -187,9 +271,9 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _handleSubmit,
+                  onPressed: (_isLoading || isOverpaid) ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryGreen,
+                    backgroundColor: isOverpaid ? Colors.grey : AppColors.primaryGreen,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -214,6 +298,107 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(text, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 0.8)),
+    );
+  }
+
+  Future<void> _sendPaymentSMS(double oldBal, double amount, double newBal) async {
+    if (_phone.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Labour mobile number unavailable')),
+        );
+      }
+      return;
+    }
+
+    if (_smsService.smsMode == 'bsm_sms') {
+      if (mounted) _showComingSoonDialog();
+      return;
+    }
+
+    final String message = '''
+Hello ${widget.labourName},
+
+Payment processed successfully.
+
+Previous Balance:
+₹${NumberFormat('#,##,###').format(oldBal.abs())}
+
+Amount Paid:
+₹${NumberFormat('#,##,###').format(amount)}
+
+Remaining Balance:
+₹${NumberFormat('#,##,###').format(newBal.abs())}
+
+Thank you,
+BSM Agro Industry''';
+
+    final cleanPhone = _phone.replaceAll(RegExp(r'\D'), '');
+    final Uri url = Uri.parse('sms:$cleanPhone?body=${Uri.encodeComponent(message)}');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open SMS app')),
+        );
+      }
+    }
+  }
+
+  void _showComingSoonDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.rocket_launch_outlined, color: AppColors.primaryGreen),
+            const SizedBox(width: 12),
+            const Text('Coming Soon'),
+          ],
+        ),
+        content: const Text('BSM SMS backend integration is coming soon. Use "My Number" for now to send SMS locally.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceSummaryCard(String label, double amount, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.1), width: 1.5),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            '₹${NumberFormat('#,##,###').format(amount.abs())}',
+            style: GoogleFonts.inter(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

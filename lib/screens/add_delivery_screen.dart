@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../core/app_colors.dart';
-import '../widgets/primary_button.dart';
 import '../models/delivery.dart';
 import '../models/customer_model.dart';
+import '../models/inventory_model.dart';
+import '../models/category_model.dart';
 import '../services/api_service.dart';
+import '../services/supplier_service.dart';
 import '../services/token_service.dart';
-import '../services/pdf_service.dart';
-import 'package:printing/printing.dart';
-
+import '../features/invoice/presentation/providers/template_provider.dart';
+import '../features/invoice/presentation/screens/template_selection_screen.dart';
+import 'delivery_success_screen.dart';
 
 class AddDeliveryScreen extends StatefulWidget {
   const AddDeliveryScreen({super.key});
@@ -20,7 +23,6 @@ class AddDeliveryScreen extends StatefulWidget {
 class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _formKey = GlobalKey<FormState>();
   final _apiService = ApiService(TokenService.instance);
-  final _pdfService = PdfService();
 
   String? _selectedCustomer;
   CustomerModel? _selectedCustomerModel;
@@ -30,7 +32,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _companyController = TextEditingController();
   final _addressController = TextEditingController();
   String _selectedPriority = 'NORMAL';
-  bool _isLoading = false;
+
+  // ── 3-step flow state ────────────────────────────────────────────────────
+  bool _isSaving = false;           // Step 1: saving delivery
+  bool _isGenerating = false;        // Step 3: generating invoice PDF
+  Delivery? _savedDelivery;          // Set after successful SAVE
+  String? _localTemplateId;          // Set after CHOOSE TEMPLATE returns
 
   // Each entry owns its own controllers to prevent state-shift on delete/add
   final List<ProductItemEntry> _productEntries = [ProductItemEntry()];
@@ -42,12 +49,53 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   bool _isFetchingCustomers = true;
   bool _showSuggestions = false;
 
-  final List<String> _products = ['Raw Silk', 'Cotton Yarn', 'Silk Fabric', 'Waste Cotton'];
+  List<GroupedItemModel> _groupedItems = [];
+  List<InventoryItemModel> _inventoryItems = [];
+  bool _isLoadingInventory = true;
+
+  bool get _hasInsufficientStock {
+    // While inventory is still loading, never block the Save button.
+    if (_isLoadingInventory) return false;
+    for (final entry in _productEntries) {
+      if (entry.productName == null) continue;
+      final invItem = _inventoryItems.firstWhere(
+        (item) => item.itemName == entry.productName,
+        orElse: () => InventoryItemModel(itemName: '', currentStock: 0, unit: '', threshold: 0),
+      );
+      if (invItem.itemName.isNotEmpty && entry.quantity > invItem.currentStock) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
     super.initState();
     _fetchCustomers();
+    _fetchInventory();
+  }
+
+  Future<void> _fetchInventory() async {
+    try {
+      final ts = await TokenService.getInstance();
+      final supplierService = SupplierService(ts);
+      final items = await supplierService.getInventory();
+      final groups = await supplierService.getGroupedItemsDropdown();
+      if (mounted) {
+        setState(() {
+          _inventoryItems = items;
+          _groupedItems = groups;
+          _isLoadingInventory = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingInventory = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchCustomers() async {
@@ -118,7 +166,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     setState(() {});
   }
 
-  Future<void> _handleConfirmDelivery() async {
+  Future<void> _handleSaveDelivery() async {
     // Check customer first with a specific message
     if (_selectedCustomer == null || _selectedCustomerModel?.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -150,7 +198,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSaving = true);
 
     try {
       final List<ProductItem> items = _productEntries.map((entry) {
@@ -160,14 +208,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           unit: entry.unit,
           pricingType: entry.pricingType,
           pricePerUnit: entry.pricePerUnit,
-          // costPerUnit removed from UI; default is 0.0 in model
           costPerUnit: 0.0,
         );
       }).toList();
 
       final previousBalance = _selectedCustomerModel?.balance ?? 0.0;
-      final deliveryTotal = _calculateGrandTotal;
-      final finalTotal = Delivery.calculateFinalAmount(previousBalance, deliveryTotal);
+      final deliveryTotalCalc = _calculateGrandTotal;
+      final finalTotal = Delivery.calculateFinalAmount(previousBalance, deliveryTotalCalc);
 
       final customFieldsList = _customFieldsControllers.map((field) {
         return {
@@ -176,60 +223,163 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         };
       }).where((f) => f['label']!.isNotEmpty && f['value']!.isNotEmpty).toList();
 
+      print('---------- DEBUG CREATE DELIVERY ----------');
+      print('Status being sent: pending');
+      print('-------------------------------------------');
+
       final delivery = Delivery.create(
         customerId: _selectedCustomerModel?.id,
         customerName: _selectedCustomer!,
         customerPhone: _selectedCustomerModel?.phone,
         previousBalance: previousBalance,
         updatedBalance: finalTotal,
-        deliveryTotal: deliveryTotal,
+        deliveryTotal: deliveryTotalCalc,
         products: items,
         crewLeader: _crewLeaderController.text,
         priority: _selectedPriority,
-        status: 'completed', // Ensure ledger sync isn't blocked by pending status
+        status: 'pending',
         gstNumber: _gstController.text.trim().isEmpty ? null : _gstController.text.trim(),
         companyName: _companyController.text.trim().isEmpty ? null : _companyController.text.trim(),
         address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
         customFields: customFieldsList,
       );
 
-      final success = await _apiService.createDelivery(delivery);
+      final createdDelivery = await _apiService.createDelivery(delivery);
 
-      if (success) {
-        // Explicitly sync the customer's master balance to prevent UI drift
+      if (createdDelivery != null) {
+        // Sync customer balance
         if (_selectedCustomerModel?.id != null) {
           await _apiService.syncCustomerBalance(_selectedCustomerModel!.id!);
         }
-
+        if (mounted) {
+          // IMPORTANT: Re-fetch the full delivery object by ID. 
+          // The initial 'createDelivery' response might not have the fully populated 
+          // nested invoice data if the backend generates it in a post-save hook.
+          final fullDelivery = await _apiService.getDeliveryById(createdDelivery.id);
+          
+          setState(() {
+            _savedDelivery = fullDelivery ?? createdDelivery;
+            // Pre-select default template if available
+            final defaultId = context.read<TemplateProvider>().defaultTemplateId;
+            if (defaultId != null && defaultId.isNotEmpty) {
+              _localTemplateId = defaultId;
+            }
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Delivery saved! Now choose a template and generate the invoice.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          // Refresh inventory so stock quantities reflect what was deducted.
+          _fetchInventory();
+        }
+      } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Delivery added successfully. Generating Receipt...')),
+            const SnackBar(content: Text('Failed to save delivery.'), backgroundColor: Colors.red),
           );
-          
-          try {
-            await Printing.layoutPdf(
-              onLayout: (format) async => await _pdfService.generateReceipt(delivery),
-              name: 'Delivery_Receipt_${delivery.id}.pdf',
-            );
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to preview PDF: $e'), backgroundColor: Colors.red),
-              );
-            }
-          }
-
-          if (mounted) Navigator.pop(context, true);
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error saving delivery: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// Step 2: Open TemplateSelectionScreen as a PICKER.
+  /// It returns a String (the chosen templateId) via Navigator.pop.
+  Future<void> _handleChooseTemplate() async {
+    final delivery = _savedDelivery;
+    if (delivery == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please save the delivery first.')),
+      );
+      return;
+    }
+
+    // Navigate to TemplateSelectionScreen in picker mode.
+    // It calls Navigator.pop(context, templateId) when user selects a template.
+    final chosen = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TemplateSelectionScreen(
+          delivery: delivery,
+          pickerMode: true,
+        ),
+      ),
+    );
+
+    if (chosen != null && mounted) {
+      setState(() => _localTemplateId = chosen);
+      final templateName = context.read<TemplateProvider>().templateById(chosen)?.name ?? chosen;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Template selected: $templateName'),
+          backgroundColor: AppColors.primaryGreen,
+        ),
+      );
+    }
+  }
+
+  /// Step 3: Generate PDF from the chosen template, then open DeliverySuccessScreen.
+  Future<void> _handleGenerateInvoice() async {
+    final delivery = _savedDelivery;
+    final templateId = _localTemplateId;
+    if (delivery == null || templateId == null) return;
+    if (_isGenerating) return;
+
+    setState(() => _isGenerating = true);
+    try {
+      debugPrint('[AddDelivery] Persisting and Generating invoice for delivery ${delivery.id} with template $templateId');
+      final provider = context.read<TemplateProvider>();
+      
+      final result = await provider.updateAndGenerateInvoice(
+        delivery: delivery,
+        templateId: templateId,
+      );
+
+      if (!mounted) return;
+
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'Failed to update and generate invoice'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final bytes = result.bytes;
+      final updatedDelivery = result.updatedDelivery;
+
+      // Navigate to success screen — pop all the way home first so back button
+      // returns to Dashboard, not the now-stale form.
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DeliverySuccessScreen(
+            delivery: updatedDelivery,
+            pdfData: bytes,
+            templateId: updatedDelivery.invoice?.templateId ?? templateId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error generating invoice: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
     }
   }
 
@@ -494,7 +644,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       key: ValueKey(item),
                       item: item,
                       index: index,
-                      products: _products,
+                      groupedItems: _groupedItems,
+                      inventoryItems: _inventoryItems,
                       canDelete: _productEntries.length > 1,
                       onDelete: () => setState(() {
                         item.dispose();
@@ -538,6 +689,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   ),
                   const SizedBox(height: 32),
 
+                  // ── TOTALS SUMMARY CARD ─────────────────────────────────
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -579,32 +731,93 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             Text('₹ ${Delivery.calculateFinalAmount(_selectedCustomerModel?.balance ?? 0.0, _calculateGrandTotal).toStringAsFixed(2)}', style: GoogleFonts.inter(color: Colors.yellow, fontSize: 28, fontWeight: FontWeight.bold)),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        PrimaryButton(
-                          text: 'Confirm & Generate PDF',
-                          onPressed: _handleConfirmDelivery,
-                          showArrow: false,
-                          // color: Colors.white,
-                          // textColor: AppColors.primaryGreen,
-                        ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // ── 3-STEP ACTION FLOW ───────────────────────────────────
+
+                  // Step progress indicator
+                  _buildStepIndicator(),
+                  const SizedBox(height: 20),
+
+                  // STEP 1: SAVE
+                  _buildActionStep(
+                    stepNumber: 1,
+                    title: _savedDelivery != null ? '✓  Delivery Saved' : 'Save Delivery',
+                    subtitle: _hasInsufficientStock
+                        ? 'Not enough stock available'
+                        : (_savedDelivery != null
+                            ? 'Delivery recorded successfully'
+                            : 'Save the delivery without generating an invoice'),
+                    icon: _hasInsufficientStock
+                        ? Icons.error_outline
+                        : (_savedDelivery != null ? Icons.check_circle : Icons.save_outlined),
+                    color: _hasInsufficientStock
+                        ? Colors.red
+                        : (_savedDelivery != null ? Colors.green : AppColors.primaryGreen),
+                    isCompleted: _savedDelivery != null,
+                    isLoading: _isSaving,
+                    isEnabled: _savedDelivery == null && !_isSaving && !_hasInsufficientStock,
+                    onTap: _handleSaveDelivery,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // STEP 2: CHOOSE TEMPLATE
+                  _buildActionStep(
+                    stepNumber: 2,
+                    title: _localTemplateId != null
+                        ? '✓  Template: ${context.read<TemplateProvider>().templateById(_localTemplateId!)?.name ?? _localTemplateId}'
+                        : 'Choose Template',
+                    subtitle: _localTemplateId != null
+                        ? 'Tap to change the selected template'
+                        : 'Pick an invoice layout for this delivery',
+                    icon: _localTemplateId != null ? Icons.palette : Icons.palette_outlined,
+                    color: _localTemplateId != null ? Colors.blue : (_savedDelivery != null ? AppColors.primaryGreen : Colors.grey),
+                    isCompleted: _localTemplateId != null,
+                    isLoading: false,
+                    isEnabled: _savedDelivery != null,
+                    onTap: _handleChooseTemplate,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // STEP 3: GENERATE INVOICE
+                  _buildActionStep(
+                    stepNumber: 3,
+                    title: 'Generate Invoice',
+                    subtitle: _localTemplateId == null
+                        ? 'Choose a template first'
+                        : 'Generate PDF & open preview screen',
+                    icon: Icons.receipt_long,
+                    color: (_savedDelivery != null && _localTemplateId != null)
+                        ? const Color(0xFF6A1B9A)
+                        : Colors.grey,
+                    isCompleted: false,
+                    isLoading: _isGenerating,
+                    isEnabled: _savedDelivery != null && _localTemplateId != null && !_isGenerating,
+                    onTap: _handleGenerateInvoice,
+                    isPrimary: true,
+                  ),
+
                   const SizedBox(height: 60),
                 ],
               ),
             ),
           ),
-          if (_isLoading)
+          if (_isSaving || _isGenerating)
             Container(
               color: Colors.black.withValues(alpha: 0.5),
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: Colors.white),
-                    SizedBox(height: 16),
-                    Text('Finalizing Invoice...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    const CircularProgressIndicator(color: Colors.white),
+                    const SizedBox(height: 16),
+                    Text(
+                      _isSaving ? 'Saving Delivery...' : 'Generating Invoice...',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
                   ],
                 ),
               ),
@@ -614,6 +827,125 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
+  // ── Step progress strip ──────────────────────────────────────────────────
+  Widget _buildStepIndicator() {
+    return Row(
+      children: [
+        _buildStepDot(1, _savedDelivery != null),
+        Expanded(child: Divider(color: _savedDelivery != null ? AppColors.primaryGreen : Colors.grey.shade300, thickness: 2)),
+        _buildStepDot(2, _localTemplateId != null),
+        Expanded(child: Divider(color: _localTemplateId != null ? AppColors.primaryGreen : Colors.grey.shade300, thickness: 2)),
+        _buildStepDot(3, false),
+      ],
+    );
+  }
+
+  Widget _buildStepDot(int step, bool done) {
+    return Container(
+      width: 32, height: 32,
+      decoration: BoxDecoration(
+        color: done ? AppColors.primaryGreen : Colors.grey.shade200,
+        shape: BoxShape.circle,
+        border: Border.all(color: done ? AppColors.primaryGreen : Colors.grey.shade400, width: 2),
+      ),
+      alignment: Alignment.center,
+      child: done
+          ? const Icon(Icons.check, color: Colors.white, size: 16)
+          : Text('$step', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
+    );
+  }
+
+  // ── Individual action step button ────────────────────────────────────────
+  Widget _buildActionStep({
+    required int stepNumber,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required bool isCompleted,
+    required bool isLoading,
+    required bool isEnabled,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+  }) {
+    return AnimatedOpacity(
+      opacity: isEnabled || isCompleted ? 1.0 : 0.45,
+      duration: const Duration(milliseconds: 250),
+      child: Material(
+        color: isPrimary && isEnabled
+            ? color
+            : isCompleted
+                ? color.withValues(alpha: 0.08)
+                : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        elevation: isEnabled && !isCompleted ? 2 : 0,
+        child: InkWell(
+          onTap: isEnabled || isCompleted ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isCompleted ? color.withValues(alpha: 0.4) : Colors.grey.shade200,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: isPrimary && isEnabled ? Colors.white.withValues(alpha: 0.2) : color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: isLoading
+                      ? Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: isPrimary ? Colors.white : color),
+                        )
+                      : Icon(icon, color: isPrimary && isEnabled ? Colors.white : color, size: 22),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isPrimary && isEnabled ? Colors.white : (isCompleted ? color : AppColors.textPrimary),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: isPrimary && isEnabled ? Colors.white70 : AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  isCompleted ? Icons.edit_outlined : Icons.chevron_right,
+                  color: isPrimary && isEnabled ? Colors.white70 : color.withValues(alpha: 0.6),
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
 
   Widget _buildSectionHeader(String title) {
@@ -699,7 +1031,8 @@ class ProductItemEntry {
 class _ProductItemCard extends StatefulWidget {
   final ProductItemEntry item;
   final int index;
-  final List<String> products;
+  final List<GroupedItemModel> groupedItems;
+  final List<InventoryItemModel> inventoryItems;
   final bool canDelete;
   final VoidCallback onDelete;
   final VoidCallback onChanged;
@@ -708,7 +1041,8 @@ class _ProductItemCard extends StatefulWidget {
     super.key,
     required this.item,
     required this.index,
-    required this.products,
+    required this.groupedItems,
+    required this.inventoryItems,
     required this.canDelete,
     required this.onDelete,
     required this.onChanged,
@@ -725,7 +1059,6 @@ class _ProductItemCardState extends State<_ProductItemCard> {
   @override
   void initState() {
     super.initState();
-    // Initialise from model so existing values survive parent rebuilds
     _priceCtrl = TextEditingController(
       text: widget.item.pricePerUnit > 0 ? widget.item.pricePerUnit.toString() : '',
     );
@@ -755,6 +1088,57 @@ class _ProductItemCardState extends State<_ProductItemCard> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+
+    List<DropdownMenuItem<String>> buildDropdownItems() {
+      List<DropdownMenuItem<String>> items = [];
+      for (var group in widget.groupedItems) {
+        // Group Header (disabled)
+        items.add(DropdownMenuItem(
+          value: 'HEADER_${group.category}',
+          enabled: false,
+          child: Text(group.category, style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen, fontSize: 13)),
+        ));
+        // Group Items
+        for (var itemName in group.items) {
+          final invItem = widget.inventoryItems.firstWhere(
+            (inv) => inv.itemName == itemName,
+            orElse: () => InventoryItemModel(itemName: itemName, currentStock: 0, unit: '', threshold: 0),
+          );
+          items.add(DropdownMenuItem(
+            value: itemName,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0),
+              child: Text('$itemName (Stock: ${invItem.currentStock.toStringAsFixed(0)} ${invItem.unit})', 
+                style: GoogleFonts.inter(color: AppColors.textPrimary)),
+            ),
+          ));
+        }
+      }
+      return items;
+    }
+
+    final validValues = widget.groupedItems.expand((g) => g.items).toSet();
+    final safeDropdownValue =
+        (item.productName != null && validValues.contains(item.productName))
+            ? item.productName
+            : null;
+
+    if (safeDropdownValue == null && item.productName != null) {
+      item.productName = null;
+    }
+
+    // ── Live stock preview ──────────────────────────────────────────────────
+    final selectedInvItem = widget.inventoryItems.firstWhere(
+      (inv) => inv.itemName == item.productName,
+      orElse: () =>
+          InventoryItemModel(itemName: '', currentStock: 0, unit: '', threshold: 0),
+    );
+    final showPreview =
+        item.productName != null && selectedInvItem.itemName.isNotEmpty;
+    final remaining = selectedInvItem.currentStock - item.quantity;
+    final exceedsStock =
+        item.quantity > 0 && item.quantity > selectedInvItem.currentStock;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20.0),
       child: Container(
@@ -780,13 +1164,10 @@ class _ProductItemCardState extends State<_ProductItemCard> {
               ],
             ),
             const SizedBox(height: 12),
-            // Bug fix: value: bound to model so dropdown survives parent setState
             DropdownButtonFormField<String>(
-              value: item.productName,
-              decoration: _inputDecoration('Product type', Icons.shopping_basket_outlined),
-              items: widget.products
-                  .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                  .toList(),
+              value: safeDropdownValue,
+              decoration: _inputDecoration('Select product', Icons.shopping_basket_outlined),
+              items: buildDropdownItems(),
               onChanged: (v) {
                 setState(() => item.productName = v);
                 widget.onChanged();
@@ -864,6 +1245,26 @@ class _ProductItemCardState extends State<_ProductItemCard> {
                 ],
               ),
             ),
+            if (showPreview) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    exceedsStock
+                        ? 'Not enough stock available'
+                        : 'Live remaining: ${remaining.toStringAsFixed(0)} ${selectedInvItem.unit}',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: exceedsStock ? Colors.red : Colors.green,
+                    ),
+                  ),
+                  if (exceedsStock)
+                    const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                ],
+              ),
+            ]
           ],
         ),
       ),

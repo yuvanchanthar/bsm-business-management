@@ -10,10 +10,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/app_colors.dart';
 import '../models/delivery.dart';
 import '../services/api_service.dart';
-import '../services/pdf_service.dart';
 import '../services/token_service.dart';
+import '../features/invoice/presentation/providers/template_provider.dart';
+import 'package:provider/provider.dart';
 import 'add_delivery_screen.dart';
 import 'edit_delivery_screen.dart';
+import '../features/invoice/services/invoice_generator_service.dart';
+
+import '../widgets/notification_bell.dart';
 
 class DeliveryListScreen extends StatefulWidget {
   const DeliveryListScreen({super.key});
@@ -24,7 +28,6 @@ class DeliveryListScreen extends StatefulWidget {
 
 class _DeliveryListScreenState extends State<DeliveryListScreen> {
   final ApiService _apiService = ApiService(TokenService.instance);
-  final PdfService _pdfService = PdfService();
 
   List<Delivery> _deliveries = [];
   bool _isLoading = true;
@@ -68,17 +71,34 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
 
   // ── PDF helpers ─────────────────────────────────────────────────────────────
 
-  /// Generates PDF bytes for [delivery] using PdfService.
-  Future<Uint8List> _generatePdfBytes(Delivery delivery) {
-    return _pdfService.generateReceipt(delivery);
+  /// Generates PDF bytes for [delivery] using the template permanently stored
+  /// ON THAT DELIVERY (delivery.invoice?.templateId).
+  ///
+  /// CRITICAL: We must NEVER use provider.selectedTemplateId here because that
+  /// is a transient UI state for the *current* delivery being created.
+  /// Using it would cause ALL historical deliveries to re-render with the latest
+  /// selected template — the root cause of Bug 3 (global template bleeding).
+  Future<Uint8List> _generatePdfBytes(Delivery delivery) async {
+    // ✅ Correct: use this specific delivery's own template, fallback to classic.
+    final templateId = delivery.invoice?.templateId ?? 'classic';
+    debugPrint('[DeliveryList] Generating PDF for delivery ${delivery.id} using templateId: $templateId');
+    
+    // Directly use the generator service to avoid global provider state bleeding
+    return const InvoiceGeneratorService().generate(
+      delivery: delivery,
+      templateId: templateId,
+    );
   }
 
   /// Opens the in-app PDF viewer (printable preview).
   Future<void> _viewInvoicePdf(Delivery delivery) async {
     try {
+      final bytes = await _generatePdfBytes(delivery);
+      final templateId = delivery.invoice?.templateId ?? 'classic';
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       await Printing.layoutPdf(
-        onLayout: (_) => _generatePdfBytes(delivery),
-        name: 'Invoice_${delivery.id}.pdf',
+        onLayout: (_) => bytes,
+        name: 'INV-${delivery.id}_${templateId.toUpperCase()}_$timestamp.pdf',
       );
     } catch (e) {
       if (mounted) {
@@ -114,17 +134,18 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
         return;
       }
 
-      // 2. ELSE generate invoice once
+      // 2. ELSE generate invoice once using THIS delivery's own templateId
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Preparing invoice for sharing...')),
       );
       
       final bytes = await _generatePdfBytes(delivery);
+      final templateId = delivery.invoice?.templateId ?? 'classic';
+      final filename = 'INV-${delivery.id}_${templateId.toUpperCase()}_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
       String? uploadedUrl;
       try {
         final base64String = base64Encode(bytes);
-        final filename = 'Invoice_${delivery.id}.pdf';
         uploadedUrl = await _apiService.uploadPdfBase64(base64String, filename);
       } catch (e) {
         debugPrint('Cloud upload failed: $e');
@@ -133,7 +154,7 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
       // 3. Prefer sharing via local file first using share_plus
       try {
         final tempDir = await getTemporaryDirectory();
-        final file = await File('${tempDir.path}/Invoice_${delivery.id}.pdf').create();
+        final file = await File('${tempDir.path}/$filename').create();
         await file.writeAsBytes(bytes);
 
         final text = uploadedUrl != null 
@@ -225,18 +246,14 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
     }
   }
 
-  Future<void> _markAsCompleted(Delivery delivery) async {
+  Future<void> _updateStatus(Delivery delivery, String newStatus) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final updated = delivery.copyWith(status: 'completed');
-      await _apiService.updateDelivery(delivery.id, updated);
-      if (delivery.customerId != null) {
-        await _apiService.syncCustomerBalance(delivery.customerId!);
-      }
+      await _apiService.updateDeliveryStatus(delivery.id, newStatus);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Delivery marked as completed!')),
+          SnackBar(content: Text('Delivery marked as $newStatus!')),
         );
         _fetchDeliveries();
       }
@@ -245,7 +262,7 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to update: $e'),
+            content: Text('Failed to update status: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -283,10 +300,8 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: AppColors.primaryGreen),
-            onPressed: () {},
-          ),
+          const NotificationBell(),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
@@ -325,9 +340,11 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                _buildFilterChip('All Deliveries', 'all'),
+                _buildFilterChip('All', 'all'),
                 const SizedBox(width: 12),
                 _buildFilterChip('Pending', 'pending'),
+                const SizedBox(width: 12),
+                _buildFilterChip('Dispatched', 'dispatched'),
                 const SizedBox(width: 12),
                 _buildFilterChip('Completed', 'completed'),
               ],
@@ -377,9 +394,7 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
                                     ).then((_) => _fetchDeliveries());
                                   },
                                   onDelete: () => _deleteDelivery(delivery),
-                                  onMarkCompleted: delivery.status == 'pending'
-                                      ? () => _markAsCompleted(delivery)
-                                      : null,
+                                  onStatusUpdate: (newStatus) => _updateStatus(delivery, newStatus),
                                   onViewInvoice: () =>
                                       _viewInvoicePdf(delivery),
                                   onShare: () => _shareInvoicePdf(delivery),
@@ -406,9 +421,20 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
 
   Widget _buildFilterChip(String label, String filterValue) {
     bool isSelected = _selectedFilter == filterValue;
-    Color activeColor = filterValue == 'pending'
-        ? Colors.orange
-        : (filterValue == 'completed' ? Colors.green : AppColors.primaryGreen);
+    Color activeColor;
+    switch (filterValue) {
+      case 'pending':
+        activeColor = Colors.orange;
+        break;
+      case 'dispatched':
+        activeColor = Colors.blue;
+        break;
+      case 'completed':
+        activeColor = Colors.green;
+        break;
+      default:
+        activeColor = AppColors.primaryGreen;
+    }
 
     return InkWell(
       onTap: () => setState(() => _selectedFilter = filterValue),
@@ -439,7 +465,7 @@ class DeliveryCard extends StatelessWidget {
   final Delivery delivery;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback? onMarkCompleted;
+  final Function(String) onStatusUpdate;
   final VoidCallback onViewInvoice;
   final VoidCallback onShare;
 
@@ -448,7 +474,7 @@ class DeliveryCard extends StatelessWidget {
     required this.delivery,
     required this.onEdit,
     required this.onDelete,
-    this.onMarkCompleted,
+    required this.onStatusUpdate,
     required this.onViewInvoice,
     required this.onShare,
   });
@@ -460,6 +486,19 @@ class DeliveryCard extends StatelessWidget {
         return AppColors.negativeBalance;
       case 'MEDIUM':
         return const Color(0xFFF57C00);
+      default:
+        return AppColors.primaryGreen;
+    }
+  }
+
+  Color _getStatusColor() {
+    switch (delivery.status) {
+      case 'pending':
+        return Colors.orange;
+      case 'dispatched':
+        return Colors.blue;
+      case 'completed':
+        return Colors.green;
       default:
         return AppColors.primaryGreen;
     }
@@ -506,7 +545,7 @@ class DeliveryCard extends StatelessWidget {
             child: Container(
               width: 3,
               decoration: BoxDecoration(
-                color: isCompleted ? Colors.green : priorityColor,
+                color: _getStatusColor(),
                 borderRadius: const BorderRadius.only(
                   topRight: Radius.circular(4),
                   bottomRight: Radius.circular(4),
@@ -520,63 +559,111 @@ class DeliveryCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header row ──────────────────────────────────────────────
+                // ── Header Section ──────────────────────────────────────────
+                Text(
+                  delivery.customerName,
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 10),
+                
+                // Badges Wrap (Status + Template)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    // Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor().withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        delivery.status.toUpperCase(),
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: _getStatusColor(),
+                        ),
+                      ),
+                    ),
+                    
+                    // Priority Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${delivery.priority} PRIORITY',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: priorityColor,
+                        ),
+                      ),
+                    ),
+                    
+                    // Template Badge
+                    if (delivery.invoice?.invoiceNumber?.isNotEmpty == true)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryGreen.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          (delivery.invoice?.templateId?.toUpperCase() ?? 'CLASSIC'),
+                          style: GoogleFonts.inter(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryGreen,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Order & Invoice IDs row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
+                    Flexible(
                       child: Text(
-                        delivery.customerName,
+                        'Order ${delivery.id}',
                         style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: (isCompleted ? Colors.green : priorityColor)
-                            .withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        isCompleted
-                            ? 'COMPLETED'
-                            : '${delivery.priority} PRIORITY',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: isCompleted ? Colors.green : priorityColor,
+                    if (delivery.invoice?.invoiceNumber?.isNotEmpty == true) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Invoice: ${delivery.invoice!.invoiceNumber}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryGreen,
+                          ),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Order ${delivery.id}',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    if (delivery.invoice?.invoiceNumber?.isNotEmpty == true)
-                      Text(
-                        'Invoice: ${delivery.invoice!.invoiceNumber}',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryGreen,
-                        ),
-                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -591,10 +678,8 @@ class DeliveryCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
-                        isCompleted ? Icons.check_circle : Icons.agriculture,
-                        color: isCompleted
-                            ? Colors.green
-                            : AppColors.primaryGreen,
+                        isCompleted ? Icons.check_circle : (delivery.status == 'dispatched' ? Icons.local_shipping : Icons.agriculture),
+                        color: _getStatusColor(),
                         size: 24,
                       ),
                     ),
@@ -670,24 +755,31 @@ class DeliveryCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      delivery.formattedDate,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
+                    Flexible(
+                      child: Text(
+                        delivery.formattedDate,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Row(
                       children: [
-                        if (onMarkCompleted != null)
-                          Tooltip(
-                            message: 'Mark as Completed',
-                            child: IconButton(
-                              icon: const Icon(Icons.check,
-                                  color: Colors.green, size: 20),
-                              onPressed: onMarkCompleted,
-                            ),
+                        if (delivery.status == 'pending')
+                          _StatusActionButton(
+                            label: 'Mark as Dispatched',
+                            color: Colors.blue,
+                            onTap: () => onStatusUpdate('dispatched'),
+                          ),
+                        if (delivery.status == 'dispatched')
+                          _StatusActionButton(
+                            label: 'Mark as Completed',
+                            color: Colors.green,
+                            onTap: () => onStatusUpdate('completed'),
                           ),
                         IconButton(
                           icon: const Icon(Icons.edit,
@@ -742,15 +834,61 @@ class _InvoiceActionButton extends StatelessWidget {
             children: [
               Icon(icon, size: 16, color: color),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: color,
+              Flexible(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusActionButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _StatusActionButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 4.0),
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+            ),
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
           ),
         ),
       ),

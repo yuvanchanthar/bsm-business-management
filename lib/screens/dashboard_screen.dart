@@ -4,15 +4,22 @@ import '../core/app_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../controllers/auth_controller.dart';
-import 'add_delivery_screen.dart';
-import 'add_customer_screen.dart';
 import '../widgets/stat_card.dart';
 import 'login_screen.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import '../models/dashboard_stats_model.dart';
+import '../models/inventory_model.dart';
+import '../services/supplier_service.dart';
+import 'inventory_list_screen.dart';
+import 'inventory_detail_screen.dart';
 import 'customers_screen.dart'; // Add navigation if needed
 import 'labour_screen.dart'; // Add navigation if needed
+import 'delivery_list_screen.dart';
+import 'supplier_screen.dart';
+import 'supplier_detail_screen.dart';
+import 'settings_screen.dart';
+import '../widgets/notification_bell.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -27,6 +34,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DashboardStatsModel _stats = DashboardStatsModel.empty();
   bool _isLoading = true;
   String? _error;
+  List<InventoryItemModel> _lowStockAlerts = [];
 
   @override
   void initState() {
@@ -65,9 +73,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final api = await _ensureApiService();
       final stats = await api.getDashboardStats();
+      
+      final ts = await TokenService.getInstance();
+      final supplierService = SupplierService(ts);
+      final lowStock = await supplierService.getLowStockAlerts();
+
       if (mounted) {
         setState(() {
           _stats = stats;
+          _lowStockAlerts = lowStock;
           _isLoading = false;
         });
       }
@@ -171,9 +185,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications, color: AppColors.primaryGreen),
-            onPressed: () {},
+            icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
           ),
+          const NotificationBell(),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: AppColors.textSecondary),
             tooltip: 'Logout',
@@ -200,43 +219,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Quick Actions Row
-              Row(
+              Text(
+                'Quick Access',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 1.3,
                 children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final res = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const AddDeliveryScreen()));
-                        if (res == true) _fetchDashboardStats();
-                      },
-                      child: _buildQuickAction(
-                        icon: Icons.add_circle_outline,
-                        label: 'Add Delivery',
-                        color: AppColors.primaryGreen,
-                        textColor: Colors.white,
-                      ),
-                    ),
+                  _QuickAccessCard(
+                    label: 'Customers',
+                    icon: Icons.people_alt_outlined,
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CustomersScreen(),
+                        ),
+                      );
+                    },
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () async {
-                        final res = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const AddCustomerScreen()));
-                        if (res == true) _fetchDashboardStats();
-                      },
-                      child: _buildQuickAction(
-                        icon: Icons.person_add_outlined,
-                        label: 'Add Customer',
-                        color: const Color(0xFFC8E6C9),
-                        textColor: AppColors.primaryGreen,
-                      ),
-                    ),
+                  _QuickAccessCard(
+                    label: 'Deliveries',
+                    icon: Icons.local_shipping_outlined,
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DeliveryListScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _QuickAccessCard(
+                    label: 'Labour',
+                    icon: Icons.engineering_outlined,
+                    color: Colors.green,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LabourScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _QuickAccessCard(
+                    label: 'Suppliers',
+                    icon: Icons.inventory_2_outlined,
+                    color: Colors.purple,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SupplierScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _QuickAccessCard(
+                    label: 'Inventory',
+                    icon: Icons.inventory_2_outlined,
+                    color: Colors.teal,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const InventoryListScreen(),
+                        ),
+                      ).then((_) => _fetchDashboardStats());
+                    },
                   ),
                 ],
               ),
@@ -361,8 +424,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ),
-                
+
+                if (_lowStockAlerts.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'Low Stock Alerts',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ..._lowStockAlerts.map((alert) => _buildLowStockAlertCard(alert)),
+                ],
+
+                if (_stats.supplierUpcomingDue.isNotEmpty || _stats.supplierOverdue.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text(
+                    'Supplier Due Alerts',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ..._stats.supplierOverdue.map((alert) => _buildSupplierAlertCard(alert, isOverdue: true)),
+                  ..._stats.supplierUpcomingDue.map((alert) => _buildSupplierAlertCard(alert, isOverdue: false)),
+                ],
+
                 const SizedBox(height: 24),
+
                 if (_stats.monthlyRevenue.any((r) => r > 0)) ...[
                   Text(
                     'Monthly Revenue',
@@ -385,89 +478,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 24),
 
               // Operational Insights banner
-              Container(
-                height: 200,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                        'https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'),
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.8),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Operational Insights',
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Review your weekly resource efficiency.',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // Container(
+              //   height: 200,
+              //   width: double.infinity,
+              //   decoration: BoxDecoration(
+              //     borderRadius: BorderRadius.circular(24),
+              //     image: const DecorationImage(
+              //       image: NetworkImage(
+              //           'https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-1.2.1&auto=format&fit=crop&w=1000&q=80'),
+              //       fit: BoxFit.cover,
+              //     ),
+              //   ),
+              //   child: Container(
+              //     decoration: BoxDecoration(
+              //       borderRadius: BorderRadius.circular(24),
+              //       gradient: LinearGradient(
+              //         begin: Alignment.bottomCenter,
+              //         end: Alignment.topCenter,
+              //         colors: [
+              //           Colors.black.withValues(alpha: 0.8),
+              //           Colors.transparent,
+              //         ],
+              //       ),
+              //     ),
+              //     padding: const EdgeInsets.all(24),
+              //     child: Column(
+              //       mainAxisAlignment: MainAxisAlignment.end,
+              //       crossAxisAlignment: CrossAxisAlignment.start,
+              //       children: [
+              //         Text(
+              //           'Operational Insights',
+              //           style: GoogleFonts.inter(
+              //             fontSize: 20,
+              //             fontWeight: FontWeight.bold,
+              //             color: Colors.white,
+              //           ),
+              //         ),
+              //         const SizedBox(height: 4),
+              //         Text(
+              //           'Review your weekly resource efficiency.',
+              //           style: GoogleFonts.inter(
+              //             fontSize: 14,
+              //             color: Colors.white.withValues(alpha: 0.8),
+              //           ),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ),
               const SizedBox(height: 24),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildQuickAction({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required Color textColor,
-  }) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: textColor, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: textColor,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -526,6 +588,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  Widget _buildSupplierAlertCard(SupplierDueAlert alert, {required bool isOverdue}) {
+    final color = isOverdue ? Colors.red : Colors.orange;
+    String alertText = '';
+    
+    final today = DateTime.now();
+    final todayMidnight = DateTime(today.year, today.month, today.day);
+    final due = DateTime.tryParse(alert.dueDate);
+    if (due != null) {
+      final dueMidnight = DateTime(due.year, due.month, due.day);
+      final diff = dueMidnight.difference(todayMidnight).inDays;
+      if (diff < 0) {
+        final days = diff.abs();
+        alertText = '${alert.supplierName} overdue by $days day${days > 1 ? "s" : ""}';
+      } else if (diff == 1) {
+        alertText = '${alert.supplierName} payment due tomorrow';
+      } else if (diff == 0) {
+        alertText = '${alert.supplierName} payment due today';
+      } else {
+        alertText = '${alert.supplierName} payment due in $diff days';
+      }
+    } else {
+      alertText = '${alert.supplierName} payment due soon';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SupplierDetailScreen(
+              supplierId: alert.supplierId,
+              supplierName: alert.supplierName,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    alertText,
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (alert.itemName.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Item: ${alert.itemName} • Due: ₹${alert.amountDue.toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: color, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPendingCustomerCard(PendingCustomer customer) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -546,6 +688,167 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.red),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLowStockAlertCard(InventoryItemModel alert) {
+    final color = Colors.red;
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InventoryDetailScreen(
+              itemId: alert.id!,
+              itemName: alert.itemName,
+            ),
+          ),
+        ).then((_) => _fetchDashboardStats());
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '⚠ ${alert.itemName}',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Remaining: ${alert.currentStock.toStringAsFixed(0)} ${alert.unit}',
+                    style: GoogleFonts.inter(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: color, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickAccessCard extends StatefulWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickAccessCard({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  State<_QuickAccessCard> createState() => _QuickAccessCardState();
+}
+
+class _QuickAccessCardState extends State<_QuickAccessCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: GestureDetector(
+        onTapDown: (_) => _controller.forward(),
+        onTapUp: (_) {
+          _controller.reverse();
+          widget.onTap();
+        },
+        onTapCancel: () => _controller.reverse(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.08),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+            border: Border.all(
+              color: widget.color.withValues(alpha: 0.12),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: widget.color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  widget.icon,
+                  color: widget.color,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                widget.label,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

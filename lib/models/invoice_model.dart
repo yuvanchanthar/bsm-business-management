@@ -7,6 +7,7 @@ class InvoiceModel {
   final String customerId;
   final String deliveryId;
   final String type; // "original" | "updated"
+  final String templateId;
   final String customerName;
   final String customerPhone;
   final String? gstNumber;
@@ -26,6 +27,7 @@ class InvoiceModel {
     required this.customerId,
     required this.deliveryId,
     required this.type,
+    this.templateId = 'classic',
     required this.customerName,
     required this.customerPhone,
     this.gstNumber,
@@ -107,6 +109,7 @@ class InvoiceModel {
       customerId: json['customerId']?.toString() ?? '',
       deliveryId: json['deliveryId']?.toString() ?? '',
       type: json['type'] ?? 'original',
+      templateId: json['templateId']?.toString() ?? 'classic',
       customerName: json['customerName'] ?? '',
       customerPhone: json['customerPhone'] ?? '',
       gstNumber: json['gstNumber']?.toString(),
@@ -145,6 +148,7 @@ class InvoiceModel {
         'customerId': customerId,
         'deliveryId': deliveryId,
         'type': type,
+        'templateId': templateId,
         'customerName': customerName,
         'customerPhone': customerPhone,
         'gstNumber': gstNumber,
@@ -167,11 +171,12 @@ class InvoiceModel {
   /// Builds a temporary InvoiceModel from a Delivery for client-side PDF preview.
   static InvoiceModel fromDelivery(Delivery delivery, String type) {
     return InvoiceModel(
-      id: '',
-      invoiceNumber: 'INV-${DateTime.now().millisecondsSinceEpoch}',
+      id: delivery.invoice?.id ?? 'TEMP_${delivery.id}',
+      invoiceNumber: delivery.invoice?.invoiceNumber ?? 'INV-${DateTime.now().millisecondsSinceEpoch}',
       customerId: delivery.customerId ?? '',
       deliveryId: delivery.id,
       type: type,
+      templateId: delivery.invoice?.templateId ?? 'classic',
       customerName: delivery.customerName,
       customerPhone: delivery.customerPhone ?? '',
       gstNumber: delivery.invoice?.gstNumber,
@@ -186,6 +191,40 @@ class InvoiceModel {
       previousBalance: delivery.previousBalance,
       finalAmount: delivery.updatedBalance,
       createdAt: DateTime.now(),
+    );
+  }
+
+  /// Converts this InvoiceModel back into a temporary Delivery snapshot 
+  /// for use with the new InvoiceGeneratorService templates.
+  Delivery toDelivery() {
+    return Delivery(
+      id: deliveryId,
+      customerId: customerId,
+      customerName: customerName,
+      customerPhone: customerPhone,
+      previousBalance: previousBalance,
+      updatedBalance: finalAmount,
+      deliveryTotal: totalAmount,
+      // products: products,
+      // items: items,
+      products: products.isNotEmpty ? products : items,
+      items: items.isNotEmpty ? items : products,
+      crewLeader: 'SYSTEM',
+      priority: 'NORMAL',
+      status: 'DELIVERED',
+      timestamp: createdAt,
+      invoice: DeliveryInvoice(
+        id: id,
+        invoiceNumber: invoiceNumber,
+        amount: finalAmount,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        gstNumber: gstNumber,
+        companyName: companyName,
+        address: address,
+        customFields: customFields,
+        templateId: templateId,
+      ),
     );
   }
 }

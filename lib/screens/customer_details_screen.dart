@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../core/app_colors.dart';
 import '../models/invoice_model.dart';
 import '../models/ledger_model.dart';
@@ -9,6 +11,9 @@ import '../models/payment_model.dart';
 import '../services/api_service.dart';
 import '../services/pdf_service.dart';
 import '../services/token_service.dart';
+import '../services/sms_settings_service.dart';
+import '../features/invoice/services/invoice_generator_service.dart';
+import 'delivery_detail_screen.dart';
 
 // Simple DTO to keep SliverList builder clean.
 // Stores the precomputed running balance for each entry.
@@ -26,13 +31,11 @@ class CustomerDetailsScreen extends StatefulWidget {
   @override
   State<CustomerDetailsScreen> createState() => _CustomerDetailsScreenState();
 }
-
 class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   late ApiService _apiService;
+  final SmsSettingsService _smsService = SmsSettingsService();
   CustomerLedgerModel? _ledger;
-  List<InvoiceModel> _invoices = [];
   bool _isLoading = true;
-  bool _isLoadingInvoices = false;
   String? _error;
 
   @override
@@ -45,8 +48,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     try {
       final tokenService = await TokenService.getInstance();
       _apiService = ApiService(tokenService);
+      await _smsService.init();
       await _fetchLedger();
-      _fetchInvoices(); // load invoices in background
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -88,59 +91,105 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
   }
 
-  Future<void> _fetchInvoices() async {
-    if (!mounted) return;
-    setState(() => _isLoadingInvoices = true);
-    try {
-      final invoices = await _apiService.getCustomerInvoices(widget.customerId);
-      if (mounted) setState(() => _invoices = invoices);
-    } catch (_) {
-      // Non-critical — silent failure
-    } finally {
-      if (mounted) setState(() => _isLoadingInvoices = false);
-    }
-  }
 
   Future<void> _showAddPaymentDialog() async {
     final amountController = TextEditingController();
     final noteController = TextEditingController();
+    final double currentBalance = _ledger!.finalBalance;
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Collect Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Amount (₹)',
-                prefixIcon: Icon(Icons.currency_rupee),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final String amountText = amountController.text.trim();
+          final double enteredAmount = double.tryParse(amountText) ?? 0;
+          final double remainingBalance = currentBalance - enteredAmount;
+          final bool isOverpaid = enteredAmount > currentBalance && currentBalance > 0;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text('Collect Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Current Balance Card
+                  _buildDialogBalanceCard(
+                    'Current Balance',
+                    currentBalance,
+                    Colors.blue,
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  TextField(
+                    controller: amountController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Amount Received (₹)',
+                      prefixIcon: const Icon(Icons.currency_rupee),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primaryGreen, width: 2),
+                      ),
+                    ),
+                  ),
+                  
+                  if (amountText.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    // Amount Received Summary Card
+                    _buildDialogBalanceCard(
+                      'Amount Received',
+                      enteredAmount,
+                      isOverpaid ? Colors.red : AppColors.primaryGreen,
+                    ),
+                    const SizedBox(height: 8),
+                    // Remaining Balance Card
+                    _buildDialogBalanceCard(
+                      'Remaining Balance',
+                      remainingBalance,
+                      remainingBalance < 0 ? Colors.red : AppColors.primaryGreen,
+                    ),
+                    if (isOverpaid)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Entered amount exceeds pending balance',
+                          style: GoogleFonts.inter(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                  
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: noteController,
+                    decoration: InputDecoration(
+                      labelText: 'Note (Optional)',
+                      prefixIcon: const Icon(Icons.note_alt_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(
-                labelText: 'Note (Optional)',
-                prefixIcon: Icon(Icons.note_alt_outlined),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary)),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save Payment'),
-          ),
-        ],
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isOverpaid ? Colors.grey : AppColors.primaryGreen,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                onPressed: isOverpaid ? null : () => Navigator.pop(context, true),
+                child: Text('Save Payment', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
 
@@ -157,7 +206,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
 
     try {
-      // 1. Submit payment to the CUSTOMER payments endpoint.
+      // 1. Capture old balance
+      final oldBalance = _ledger!.finalBalance;
+
+      // 2. Submit payment to the CUSTOMER payments endpoint.
       final payment = PaymentModel(
         customerId: widget.customerId,
         name: _ledger!.customer.name,
@@ -167,11 +219,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       );
       await _apiService.addCustomerPayment(payment);
 
-      // 2. Re-fetch the ledger — this is the ONLY source of truth.
-      //    Do NOT use the payment API response to update UI values.
+      // 3. Re-fetch the ledger — this is the ONLY source of truth.
       await _fetchLedger();
+      final newBalance = _ledger!.finalBalance;
 
-      // 3. Confirm to the user only after the UI is updated.
+      // 4. Confirm to the user only after the UI is updated.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -179,6 +231,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             backgroundColor: Colors.green,
           ),
         );
+
+        // 5. Trigger SMS flow automatically
+        _triggerPaymentSMS(oldBalance, amount, newBalance);
       }
     } catch (e) {
       if (mounted) {
@@ -204,6 +259,19 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     final ledger = _ledger!;
     final ledgerItems = _computeLedgerItemsWithBalance(ledger);
+
+    // Group items by date for KhataBook style
+    final List<dynamic> displayItems = [];
+    DateTime? lastDate;
+
+    for (var item in ledgerItems) {
+      final date = DateTime(item.entry.date.year, item.entry.date.month, item.entry.date.day);
+      if (lastDate == null || date != lastDate) {
+        displayItems.add(date); // Store the date as a header marker
+        lastDate = date;
+      }
+      displayItems.add(item);
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -272,7 +340,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ),
           ),
 
-          if (ledgerItems.isEmpty)
+          if (displayItems.isEmpty)
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               sliver: SliverToBoxAdapter(
@@ -291,71 +359,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               sliver: SliverList.builder(
-                itemCount: ledgerItems.length,
+                itemCount: displayItems.length,
                 itemBuilder: (context, index) {
-                  final item = ledgerItems[index];
-                  return _buildLedgerRow(item.entry, item.balance);
+                  final item = displayItems[index];
+                  if (item is DateTime) {
+                    return _buildDateHeader(item);
+                  }
+                  final ledgerItem = item as _LedgerItemWithBalance;
+                  return _buildLedgerRow(ledgerItem.entry, ledgerItem.balance);
                 },
-              ),
-            ),
-
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            sliver: SliverToBoxAdapter(
-              child: const SizedBox(height: 16),
-            ),
-          ),
-
-          // Invoices header
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            sliver: SliverToBoxAdapter(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Invoices',
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  if (_isLoadingInvoices)
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryGreen),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            sliver: SliverToBoxAdapter(child: const SizedBox(height: 16)),
-          ),
-
-          if (!_isLoadingInvoices && _invoices.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.receipt_long_outlined, size: 40, color: AppColors.textSecondary.withValues(alpha: 0.5)),
-                        const SizedBox(height: 8),
-                        Text('No invoices yet', style: GoogleFonts.inter(color: AppColors.textSecondary)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverList.builder(
-                itemCount: _invoices.length,
-                itemBuilder: (context, index) => _buildInvoiceCard(_invoices[index]),
               ),
             ),
 
@@ -437,9 +449,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          _buildCommunicationButtons(ledger.customer, balance),
+          const SizedBox(height: 16),
           const Divider(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -464,6 +478,43 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  Widget _buildDateHeader(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    String label;
+    if (date == today) {
+      label = 'Today';
+    } else if (date == yesterday) {
+      label = 'Yesterday';
+    } else {
+      label = DateFormat('dd MMM yyyy').format(date);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: AppColors.textHint.withValues(alpha: 0.2))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              label.toUpperCase(),
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textHint,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: AppColors.textHint.withValues(alpha: 0.2))),
+        ],
+      ),
+    );
+  }
+
   List<_LedgerItemWithBalance> _computeLedgerItemsWithBalance(CustomerLedgerModel ledger) {
     double runningBalance = 0;
     // The transactions from the server are sorted oldest first to correctly calculate running balance
@@ -483,73 +534,356 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     return itemsWithBalance.reversed.toList();
   }
 
+  void _navigateToDeliveryDetail(LedgerEntry entry) {
+    print('--------------------------------------------------');
+    print('[Combined Ledger] TAP EVENT');
+    print('ENTRY_TYPE: ${entry.type}');
+    print('ENTRY_DELIVERY_ID: ${entry.deliveryId}');
+    print('ENTRY_TXN_ID: ${entry.id}');
+    print('--------------------------------------------------');
+
+    if (entry.type != LedgerEntryType.delivery) {
+      print('[Combined Ledger] Navigation blocked: Entry is not a delivery.');
+      return;
+    }
+
+    final targetId = entry.deliveryId;
+    
+    if (targetId == null || targetId.isEmpty) {
+      print('[Combined Ledger] Navigation failed: deliveryId is null or empty.');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: Delivery ID missing for this entry'),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    print('[Combined Ledger] Navigating to DeliveryDetailScreen with ID: $targetId');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DeliveryDetailScreen(deliveryId: targetId),
+      ),
+    );
+  }
+
   Widget _buildLedgerRow(LedgerEntry t, double bal) {
     final isDelivery = t.type == LedgerEntryType.delivery;
+    final amountColor = isDelivery ? const Color(0xFFE64A19) : const Color(0xFF2E7D32); // Orange-Red for Debit, Green for Credit
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+        boxShadow: [
+          if (isDelivery)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+        ],
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: (isDelivery ? Colors.orange : Colors.green).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              isDelivery ? Icons.local_shipping_outlined : Icons.payments_outlined,
-              color: isDelivery ? Colors.orange : Colors.green,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: isDelivery ? Colors.white : Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: isDelivery ? () => _navigateToDeliveryDetail(t) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: amountColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isDelivery ? Icons.local_shipping_outlined : Icons.payments_outlined,
+                    color: amountColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            isDelivery ? 'Delivery' : 'Payment',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          if (isDelivery) ...[
+                            const SizedBox(width: 8),
+                            Icon(Icons.chevron_right, size: 16, color: AppColors.primaryGreen.withValues(alpha: 0.6)),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat('hh:mm aa').format(t.date),
+                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Bal: ₹${bal.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Amount
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      isDelivery ? 'Delivery' : 'Payment',
-                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    Text(
-                      DateFormat('dd MMM').format(t.date),
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
-                Text(
-                  t.description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${isDelivery ? "+" : "-"} ₹${t.amount.toStringAsFixed(0)}',
+                      '₹${t.amount.toStringAsFixed(0)}',
                       style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: isDelivery ? Colors.red : Colors.green,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: amountColor,
                       ),
                     ),
-                    Text(
-                      'Bal: ₹${bal.toStringAsFixed(0)}',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                    ),
+                    if (t.description.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        t.description,
+                        style: GoogleFonts.inter(fontSize: 10, color: AppColors.textHint),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- Communication Actions ---
+
+  Widget _buildCommunicationButtons(dynamic customer, double balance) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildCircleIconButton(
+          icon: Icons.phone_rounded,
+          onTap: () => _handleCall(customer.phone),
+          color: const Color(0xFF007AFF), // iOS Blue
+        ),
+        _buildCircleIconButton(
+          icon: FontAwesomeIcons.whatsapp,
+          onTap: () => _handleWhatsApp(customer.phone, customer.name, balance),
+          color: const Color(0xFF25D366), // WhatsApp Green
+        ),
+        _buildCircleIconButton(
+          icon: Icons.message_rounded,
+          onTap: () => _handleSMS(customer.phone),
+          color: const Color(0xFFFF9500), // SMS Orange
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircleIconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.2), width: 1.5),
+        ),
+        child: Icon(
+          icon,
+          size: 28,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  String _formatPhone(String phone) {
+    // Remove all non-numeric characters
+    return phone.replaceAll(RegExp(r'\D'), '');
+  }
+
+  void _handleCall(String phone) async {
+    if (phone.isEmpty) {
+      _showError('Phone number not available');
+      return;
+    }
+    final Uri url = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      _showError('Could not open dialer');
+    }
+  }
+
+  void _handleWhatsApp(String phone, String name, double balance) async {
+    if (phone.isEmpty) {
+      _showError('Phone number not available');
+      return;
+    }
+    
+    final cleanPhone = _formatPhone(phone);
+    // Add country code if missing (assuming India 91 as default if length is 10)
+    final finalPhone = cleanPhone.length == 10 ? '91$cleanPhone' : cleanPhone;
+    
+    final message = 'Hello $name, your pending balance is ₹${balance.abs().toStringAsFixed(0)}.';
+    final url = Uri.parse('https://wa.me/$finalPhone?text=${Uri.encodeComponent(message)}');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      _showError('Could not open WhatsApp');
+    }
+  }
+
+  void _handleSMS(String phone) async {
+    if (phone.isEmpty) {
+      _showError('Phone number not available');
+      return;
+    }
+
+    if (_smsService.smsMode == 'bsm_sms') {
+      _showComingSoon();
+      return;
+    }
+
+    final Uri url = Uri.parse('sms:$phone');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      _showError('Could not open SMS app');
+    }
+  }
+
+  void _showComingSoon() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.rocket_launch_outlined, color: AppColors.primaryGreen),
+            const SizedBox(width: 12),
+            Text('Coming Soon', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'BSM SMS backend integration is coming soon. Use "My Number" for now to send SMS locally.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _triggerPaymentSMS(double oldBalance, double amount, double newBalance) async {
+    final customer = _ledger?.customer;
+    if (customer == null) return;
+
+    if (customer.phone.isEmpty) {
+      _showError('Customer mobile number unavailable');
+      return;
+    }
+
+    if (_smsService.smsMode == 'bsm_sms') {
+      _showComingSoon();
+      return;
+    }
+
+    final String message = '''
+Hello ${customer.name},
+
+Payment received successfully.
+
+Previous Balance:
+₹${NumberFormat('#,##,###').format(oldBalance.abs())}
+
+Amount Paid:
+₹${NumberFormat('#,##,###').format(amount)}
+
+Remaining Balance:
+₹${NumberFormat('#,##,###').format(newBalance.abs())}
+
+Thank you,
+BSM Agro Industry''';
+
+    final cleanPhone = _formatPhone(customer.phone);
+    final Uri url = Uri.parse('sms:$cleanPhone?body=${Uri.encodeComponent(message)}');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      _showError('Could not open SMS app');
+    }
+  }
+
+  Widget _buildDialogBalanceCard(String label, double amount, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.1), width: 1.5),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            '₹${NumberFormat('#,##,###.##').format(amount.abs())}',
+            style: GoogleFonts.inter(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: color,
             ),
           ),
         ],
@@ -557,139 +891,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  Widget _buildInvoiceCard(InvoiceModel invoice) {
-    final isUpdated = invoice.isUpdated;
-    final badgeColor = isUpdated ? const Color(0xFFE65100) : AppColors.primaryGreen;
-    final badgeBg = isUpdated
-        ? const Color(0xFFE65100).withValues(alpha: 0.1)
-        : AppColors.primaryGreen.withValues(alpha: 0.1);
-
-    return GestureDetector(
-      onTap: () => _openInvoicePdf(invoice),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isUpdated
-                ? const Color(0xFFE65100).withValues(alpha: 0.25)
-                : Colors.grey.withValues(alpha: 0.1),
-            width: isUpdated ? 1.5 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Icon
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: badgeBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.receipt_long_outlined,
-                color: badgeColor,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // Details
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          invoice.invoiceNumber,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // Type badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: badgeBg,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          isUpdated ? 'UPDATED' : 'ORIGINAL',
-                          style: GoogleFonts.inter(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: badgeColor,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        invoice.formattedDate,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      Text(
-                        '₹ ${invoice.finalAmount.toStringAsFixed(0)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(width: 10),
-            Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
-          ],
-        ),
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade800,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  Future<void> _openInvoicePdf(InvoiceModel invoice) async {
-    final pdfService = PdfService();
-    try {
-      await Printing.layoutPdf(
-        onLayout: (format) async => pdfService.generateInvoice(invoice),
-        name: '${invoice.invoiceNumber}.pdf',
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open PDF: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 }

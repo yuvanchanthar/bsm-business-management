@@ -25,6 +25,7 @@ class DeliveryInvoice {
   final String? gstNumber;
   final String? companyName;
   final String? address;
+  final String? templateId;
   final List<Map<String, dynamic>> customFields;
 
   const DeliveryInvoice({
@@ -37,6 +38,7 @@ class DeliveryInvoice {
     this.gstNumber,
     this.companyName,
     this.address,
+    this.templateId,
     this.customFields = const [],
   });
 
@@ -51,6 +53,7 @@ class DeliveryInvoice {
       gstNumber: json['gstNumber']?.toString(),
       companyName: json['companyName']?.toString(),
       address: json['address']?.toString(),
+      templateId: json['templateId']?.toString(),
       customFields: _parseCustomFields(json['customFields']),
     );
   }
@@ -236,6 +239,9 @@ class Delivery {
         ? DeliveryInvoice.fromJson(rawInvoice)
         : null;
 
+    final status = json['status'] ?? 'pending';
+    print('[MODEL DEBUG] Delivery ID: ${json['_id'] ?? json['id']}, Status: $status');
+
     return Delivery(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
       customerId: json['customerId']?.toString(),
@@ -248,7 +254,7 @@ class Delivery {
       items: itemList,
       crewLeader: json['crewLeader'] ?? '',
       priority: json['priority'] ?? 'NORMAL',
-      status: json['status'] ?? 'pending',
+      status: status,
       timestamp: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) ?? DateTime.now() : DateTime.now(),
       invoice: invoice,
     );
