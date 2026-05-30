@@ -18,24 +18,22 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _loginController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _rememberMe = false;
   bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _loginController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   // ── Validators ────────────────────────────────────────────────────────────
 
-  String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Email is required';
-    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-    if (!emailRegex.hasMatch(value.trim())) return 'Enter a valid email address';
+  String? _validateLogin(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Email or Mobile Number is required';
     return null;
   }
 
@@ -53,8 +51,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final auth = context.read<AuthController>();
     if (auth.isLoading) return;
 
+    String normalizedLogin = _loginController.text.trim();
+    if (!normalizedLogin.contains('@')) {
+      normalizedLogin = normalizedLogin.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    }
+
     final success = await auth.login(
-      email: _emailController.text.trim(),
+      loginId: normalizedLogin,
       password: _passwordController.text,
     );
 
@@ -150,15 +153,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // ── Email ──────────────────────────────────────────────
+                // ── Login ID ──────────────────────────────────────────────
                 CustomTextField(
-                  label: 'EMAIL',
-                  hintText: 'name@agro.com',
-                  keyboardType: TextInputType.emailAddress,
-                  controller: _emailController,
-                  validator: _validateEmail,
+                  label: 'EMAIL OR MOBILE NUMBER',
+                  hintText: 'name@agro.com or +919876543210',
+                  keyboardType: TextInputType.text,
+                  controller: _loginController,
+                  validator: _validateLogin,
                   suffixIcon: const Icon(
-                    Icons.email_outlined,
+                    Icons.person_outline,
                     color: AppColors.textHint,
                   ),
                 ),

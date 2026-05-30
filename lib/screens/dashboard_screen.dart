@@ -236,7 +236,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 mainAxisSpacing: 16,
                 childAspectRatio: 1.3,
                 children: [
-                  _QuickAccessCard(
+                   _QuickAccessCard(
                     label: 'Customers',
                     icon: Icons.people_alt_outlined,
                     color: Colors.blue,
@@ -246,7 +246,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         MaterialPageRoute(
                           builder: (_) => const CustomersScreen(),
                         ),
-                      );
+                      ).then((_) => _fetchDashboardStats());
                     },
                   ),
                   _QuickAccessCard(
@@ -259,7 +259,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         MaterialPageRoute(
                           builder: (_) => const DeliveryListScreen(),
                         ),
-                      );
+                      ).then((_) => _fetchDashboardStats());
                     },
                   ),
                   _QuickAccessCard(
@@ -272,7 +272,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         MaterialPageRoute(
                           builder: (_) => const LabourScreen(),
                         ),
-                      );
+                      ).then((_) => _fetchDashboardStats());
                     },
                   ),
                   _QuickAccessCard(
@@ -285,7 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         MaterialPageRoute(
                           builder: (_) => const SupplierScreen(),
                         ),
-                      );
+                      ).then((_) => _fetchDashboardStats());
                     },
                   ),
                   _QuickAccessCard(

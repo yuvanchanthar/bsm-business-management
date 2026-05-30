@@ -595,6 +595,24 @@ class DeliveryCard extends StatelessWidget {
                       ),
                     ),
                     
+                    // Stock Deducted Badge
+                    if (delivery.status == 'completed')
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (delivery.stockDeducted ? Colors.teal : Colors.red).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          delivery.stockDeducted ? 'STOCK DEDUCTED' : 'STOCK NOT DEDUCTED',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: delivery.stockDeducted ? Colors.teal : Colors.red,
+                          ),
+                        ),
+                      ),
+                    
                     // Priority Badge
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

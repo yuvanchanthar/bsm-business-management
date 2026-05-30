@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/token_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'contact_picker_screen.dart';
+import '../widgets/phone_field_with_country.dart';
 
 import '../widgets/notification_bell.dart';
 
@@ -20,6 +21,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+
+  String _fullPhoneNumber = '';
+  String? _initialPhone;
 
   bool _isLoading = false;
   bool _showSelectionMode = true; // Show selection cards by default
@@ -46,10 +50,9 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
 
   Future<void> _saveCustomer() async {
     final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
     final address = _addressController.text.trim();
 
-    if (name.isEmpty || phone.isEmpty) {
+    if (name.isEmpty || _fullPhoneNumber.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name and phone are required')));
       return;
     }
@@ -57,7 +60,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final customer = CustomerModel(name: name, phone: phone, address: address);
+      final customer = CustomerModel(name: name, phone: _fullPhoneNumber, address: address);
       final success = await _apiService.createCustomer(customer);
       
       setState(() => _isLoading = false);
@@ -87,7 +90,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
       if (result != null && result is Map<String, String>) {
         setState(() {
           _nameController.text = result['name'] ?? '';
-          _phoneController.text = result['phone'] ?? '';
+          _initialPhone = result['phone'] ?? '';
+          _fullPhoneNumber = _initialPhone ?? '';
           _showSelectionMode = false; // Switch to manual mode with pre-filled data
         });
       }
@@ -116,7 +120,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
             )
           : IconButton(
               icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-              onPressed: () => setState(() => _showSelectionMode = true),
+              onPressed: () => setState(() {
+                _showSelectionMode = true;
+                _initialPhone = null;
+              }),
             ),
         title: Text(
           'Add Customer',
@@ -171,7 +178,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
             icon: Icons.edit_note_outlined,
             title: 'Add Manually',
             subtitle: 'Enter name and details manually',
-            onTap: () => setState(() => _showSelectionMode = false),
+            onTap: () => setState(() {
+              _initialPhone = null;
+              _showSelectionMode = false;
+            }),
             color: const Color(0xFFE3F2FD),
             iconColor: Colors.blue,
           ),
@@ -280,7 +290,25 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           ),
           const SizedBox(height: 48),
           _buildFieldGroup('Full Name', 'e.g. Samuel Green', _nameController),
-          _buildFieldGroup('Phone Number', '000-000-0000', _phoneController),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Phone Number',
+                    style: GoogleFonts.inter(
+                        fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 4),
+                PhoneFieldWithCountry(
+                  initialValue: _initialPhone,
+                  hintText: '000-000-0000',
+                  onChanged: (phone) {
+                    _fullPhoneNumber = phone.completeNumber;
+                  },
+                ),
+              ],
+            ),
+          ),
           _buildFieldGroup('Physical Address', 'Street, City, County', _addressController),
           const SizedBox(height: 24),
           // Category Slider
@@ -331,7 +359,10 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
           const SizedBox(height: 20),
           Center(
             child: TextButton(
-              onPressed: () => setState(() => _showSelectionMode = true),
+              onPressed: () => setState(() {
+                _initialPhone = null;
+                _showSelectionMode = true;
+              }),
               child: Text(
                 'Cancel & Go Back',
                 style: GoogleFonts.inter(

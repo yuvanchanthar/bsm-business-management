@@ -140,6 +140,7 @@ class Delivery {
   final String status;
   final DateTime timestamp;
   final DeliveryInvoice? invoice;
+  final bool stockDeducted;
 
   Delivery({
     required this.id,
@@ -156,6 +157,7 @@ class Delivery {
     required this.status,
     required this.timestamp,
     this.invoice,
+    this.stockDeducted = false,
   });
 
   double get totalQuantity => _sourceItems.fold(0.0, (sum, item) => sum + item.quantity);
@@ -206,6 +208,7 @@ class Delivery {
       'crewLeader': crewLeader,
       'priority': priority,
       'status': status,
+      'stockDeducted': stockDeducted,
       // Always use unified source — never sends an empty list when items is populated.
       'items': src.map((e) => e.toJson()).toList(),
       'gstNumber': invoice?.gstNumber,
@@ -257,6 +260,7 @@ class Delivery {
       status: status,
       timestamp: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) ?? DateTime.now() : DateTime.now(),
       invoice: invoice,
+      stockDeducted: json['stockDeducted'] ?? false,
     );
   }
 
@@ -276,6 +280,7 @@ class Delivery {
     String? companyName,
     String? address,
     List<Map<String, dynamic>> customFields = const [],
+    bool stockDeducted = false,
   }) {
     final timestamp = DateTime.now();
     final id = 'BSM-${timestamp.millisecondsSinceEpoch}';
@@ -301,6 +306,7 @@ class Delivery {
         address: address,
         customFields: customFields
       ),
+      stockDeducted: stockDeducted,
     );
   }
 
@@ -319,6 +325,7 @@ class Delivery {
     String? status,
     DateTime? timestamp,
     DeliveryInvoice? invoice,
+    bool? stockDeducted,
   }) {
     return Delivery(
       id: id ?? this.id,
@@ -335,6 +342,7 @@ class Delivery {
       status: status ?? this.status,
       timestamp: timestamp ?? this.timestamp,
       invoice: invoice ?? this.invoice,
+      stockDeducted: stockDeducted ?? this.stockDeducted,
     );
   }
 }

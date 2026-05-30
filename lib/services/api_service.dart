@@ -84,13 +84,13 @@ class ApiService {
 
   /// POST /auth/login
   Future<AuthResponseModel> login({
-    required String email,
+    required String loginId,
     required String password,
   }) async {
     try {
       final response = await _dio.post(
         '/auth/login',
-        data: {'email': email, 'password': password},
+        data: {'login': loginId, 'password': password},
       );
       return AuthResponseModel.fromJson(
         response.data as Map<String, dynamic>,
@@ -581,29 +581,10 @@ class ApiService {
           print("[ApiService] Found reportData: $reportData");
         }
 
-        // ── FLUTTER-ONLY FIX: /labours/report doesn't return dailyWage/role ──
-        // Fetch from /labour-master/:id which always has these fields.
-        double masterDailyWage = 0;
-        String masterRole = '';
-        try {
-          final masterResponse = await _dio.get('/labour-master/$labourId');
-          final masterData = masterResponse.data;
-          print("[ApiService] Labour master data: $masterData");
-          if (masterData is Map<String, dynamic>) {
-            masterDailyWage = (masterData['dailyWage'] as num?)?.toDouble() ?? 0.0;
-            masterRole = masterData['role']?.toString() ?? '';
-          }
-        } catch (e) {
-          print("[ApiService] Could not fetch labour-master for wage: $e");
-        }
-
-        // Prefer master record for dailyWage/role (report endpoint doesn't include them)
-        final rawDailyWage = masterDailyWage > 0
-            ? masterDailyWage
-            : (reportData['dailyWage'] ?? reportData['daily_wage'] ?? reportData['wage'] ?? 0);
-        final rawRole = masterRole.isNotEmpty
-            ? masterRole
-            : (reportData['role']?.toString() ?? '');
+        final rawDailyWage = (reportData['dailyWage'] ?? reportData['daily_wage'] ?? reportData['wage'] ?? 0.0) is num 
+            ? (reportData['dailyWage'] ?? reportData['daily_wage'] ?? reportData['wage'] ?? 0.0).toDouble()
+            : double.tryParse((reportData['dailyWage'] ?? reportData['daily_wage'] ?? reportData['wage'] ?? 0.0).toString()) ?? 0.0;
+        final rawRole = reportData['role']?.toString() ?? '';
 
         print("PARSED DAILYWAGE: $rawDailyWage");
         print("PARSED ROLE: $rawRole");

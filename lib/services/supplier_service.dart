@@ -31,16 +31,24 @@ class SupplierService {
   }
 
   String _extractError(DioException e) {
+    // Full error logging for debug builds
+    print('[SupplierService] DioException type: ${e.type}');
+    print('[SupplierService] Status code: ${e.response?.statusCode}');
+    print('[SupplierService] Response data: ${e.response?.data}');
+
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
         e.type == DioExceptionType.connectionError) {
       return 'No internet connection. Please try again.';
     }
     final data = e.response?.data;
-    if (data is Map && data['message'] != null) {
-      return data['message'].toString();
+    if (data is Map) {
+      // Backend uses both 'message' and 'error' keys — check both
+      if (data['message'] != null) return data['message'].toString();
+      if (data['error'] != null) return data['error'].toString();
     }
-    return 'Something went wrong. Please try again.';
+    final statusCode = e.response?.statusCode;
+    return 'Request failed${statusCode != null ? ' ($statusCode)' : ''}. Please try again.';
   }
 
   // ── Supplier CRUD ─────────────────────────────────────────────────────────────
@@ -91,12 +99,52 @@ class SupplierService {
     }
   }
 
+  /// PUT /supplier-purchases/:id
+  Future<bool> updatePurchase(String id, Map<String, dynamic> data) async {
+    try {
+      await _dio.put('/supplier-purchases/$id', data: data);
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /supplier-purchases/:id
+  Future<bool> deletePurchase(String id) async {
+    try {
+      await _dio.delete('/supplier-purchases/$id');
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
   // ── Payment ───────────────────────────────────────────────────────────────────
 
   /// POST /supplier-payments
   Future<bool> addPayment(SupplierPaymentModel payment) async {
     try {
       await _dio.post('/supplier-payments', data: payment.toJson());
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PUT /supplier-payments/:id
+  Future<bool> updatePayment(String id, Map<String, dynamic> data) async {
+    try {
+      await _dio.put('/supplier-payments/$id', data: data);
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /supplier-payments/:id
+  Future<bool> deletePayment(String id) async {
+    try {
+      await _dio.delete('/supplier-payments/$id');
       return true;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -150,6 +198,24 @@ class SupplierService {
         return response.data as Map<String, dynamic>;
       }
       return {};
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// GET /suppliers/:id/pdf-report → purchaseHistory
+  /// Returns FULL purchase documents (with quantity, unit, pricePerUnit, etc.).
+  /// Used to pre-fill the Edit Purchase screen correctly, since the ledger
+  /// endpoint only returns summarized transaction entries.
+  Future<List<SupplierPurchaseModel>> getSupplierPurchasesRaw(String supplierId) async {
+    try {
+      final response = await _dio.get('/suppliers/$supplierId/pdf-report');
+      final data = response.data as Map<String, dynamic>;
+      final rawList = data['purchaseHistory'] as List<dynamic>? ?? [];
+      print('[SupplierService] getSupplierPurchasesRaw: ${rawList.length} purchases fetched');
+      return rawList
+          .map((j) => SupplierPurchaseModel.fromJson(j as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -217,7 +283,7 @@ class SupplierService {
   Future<bool> updateInventoryThreshold(String id, double threshold) async {
     try {
       await _dio.patch('/inventory/$id/threshold',
-          data: {'threshold': threshold});
+          data: {'lowStockThreshold': threshold});
       return true;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -277,7 +343,7 @@ class SupplierService {
         'itemName': itemName,
         'category': category,
         'unit': unit,
-        'threshold': threshold,
+        'lowStockThreshold': threshold,
       });
       return true;
     } on DioException catch (e) {

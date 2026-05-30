@@ -1,46 +1,41 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import '../core/app_colors.dart';
 import '../models/supplier_model.dart';
 import '../models/inventory_model.dart';
 import '../services/supplier_service.dart';
 import '../services/token_service.dart';
 
-class AddSupplierPurchaseScreen extends StatefulWidget {
+class EditSupplierPurchaseScreen extends StatefulWidget {
+  final SupplierPurchaseModel purchase;
   final String supplierId;
-  final String supplierName;
 
-  const AddSupplierPurchaseScreen({
+  const EditSupplierPurchaseScreen({
     super.key,
+    required this.purchase,
     required this.supplierId,
-    required this.supplierName,
   });
 
   @override
-  State<AddSupplierPurchaseScreen> createState() =>
-      _AddSupplierPurchaseScreenState();
+  State<EditSupplierPurchaseScreen> createState() =>
+      _EditSupplierPurchaseScreenState();
 }
 
-class _AddSupplierPurchaseScreenState
-    extends State<AddSupplierPurchaseScreen> {
+class _EditSupplierPurchaseScreenState
+    extends State<EditSupplierPurchaseScreen> {
   final _qtyCtrl   = TextEditingController();
   final _unitCtrl  = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _noteCtrl  = TextEditingController();
 
-  DateTime  _selectedDate    = DateTime.now();
-  DateTime? _selectedDueDate;
-  String?   _base64Image;
-  bool      _isLoading       = false;
+  late DateTime  _selectedDate;
+  DateTime?      _selectedDueDate;
+  bool           _isLoading      = false;
 
-  // Inventory-driven item selection
   List<InventoryItemModel> _inventoryItems = [];
   bool    _isLoadingItems = false;
-  String? _loadError;
-  String? _selectedItem;      // chosen item name
-  String? _selectedCategory;  // auto-filled from inventory
+  String? _selectedItem;
+  String? _selectedCategory;
 
   late SupplierService _service;
   bool _serviceReady = false;
@@ -51,9 +46,21 @@ class _AddSupplierPurchaseScreenState
     return qty * price;
   }
 
+  bool _fetchingPurchaseDetails = false;
+
   @override
   void initState() {
     super.initState();
+    // Pre-fill from existing purchase as initial fallback
+    _selectedItem     = widget.purchase.item;
+    _selectedCategory = widget.purchase.category;
+    _selectedDate     = widget.purchase.date;
+    _selectedDueDate  = widget.purchase.dueDate;
+    _qtyCtrl.text     = widget.purchase.quantity > 0 ? widget.purchase.quantity.toString() : '';
+    _unitCtrl.text    = widget.purchase.unit;
+    _priceCtrl.text   = widget.purchase.pricePerUnit > 0 ? widget.purchase.pricePerUnit.toString() : '';
+    _noteCtrl.text    = widget.purchase.note;
+
     _qtyCtrl.addListener(() => setState(() {}));
     _priceCtrl.addListener(() => setState(() {}));
     _init();
@@ -63,22 +70,51 @@ class _AddSupplierPurchaseScreenState
     final ts = await TokenService.getInstance();
     _service = SupplierService(ts);
     if (mounted) setState(() => _serviceReady = true);
+    _fetchPurchaseDetails();
     _fetchInventory();
+  }
+
+  Future<void> _fetchPurchaseDetails() async {
+    if (widget.purchase.id == null) return;
+    if (mounted) setState(() => _fetchingPurchaseDetails = true);
+    try {
+      final purchases = await _service.getSupplierPurchasesRaw(widget.supplierId);
+      final raw = purchases.firstWhere((p) => p.id == widget.purchase.id);
+      
+      if (mounted) {
+        setState(() {
+          _selectedItem = raw.item;
+          _selectedCategory = raw.category;
+          _selectedDate = raw.date;
+          _selectedDueDate = raw.dueDate;
+          
+          // Map backend fields correctly to the controllers, convert double to String safely
+          _qtyCtrl.text = raw.quantity > 0 ? raw.quantity.toString() : '';
+          _unitCtrl.text = raw.unit;
+          _priceCtrl.text = raw.pricePerUnit > 0 ? raw.pricePerUnit.toString() : '';
+          _noteCtrl.text = raw.note;
+          
+          _fetchingPurchaseDetails = false;
+        });
+      }
+    } catch (e) {
+      print('[EditSupplierPurchaseScreen] Error fetching raw purchase details: $e');
+      if (mounted) {
+        setState(() => _fetchingPurchaseDetails = false);
+      }
+    }
   }
 
   Future<void> _fetchInventory() async {
     if (!mounted) return;
-    setState(() { _isLoadingItems = true; _loadError = null; });
+    setState(() => _isLoadingItems = true);
     try {
       final items = await _service.getInventory();
       if (!mounted) return;
       setState(() { _inventoryItems = items; _isLoadingItems = false; });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _isLoadingItems = false;
-        _loadError = e.toString().replaceAll('Exception: ', '');
-      });
+      setState(() => _isLoadingItems = false);
     }
   }
 
@@ -97,10 +133,9 @@ class _AddSupplierPurchaseScreenState
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: Colors.purple),
-        ),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx)
+            .copyWith(colorScheme: const ColorScheme.light(primary: Colors.purple)),
         child: child!,
       ),
     );
@@ -110,58 +145,16 @@ class _AddSupplierPurchaseScreenState
   Future<void> _pickDueDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDueDate ??
-          DateTime.now().add(const Duration(days: 1)),
+      initialDate: _selectedDueDate ?? DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: Colors.purple,
-            onPrimary: Colors.white,
-            onSurface: AppColors.textPrimary,
-          ),
-        ),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx)
+            .copyWith(colorScheme: const ColorScheme.light(primary: Colors.purple)),
         child: child!,
       ),
     );
     if (picked != null) setState(() => _selectedDueDate = picked);
-  }
-
-  Future<void> _pickBillImage() async {
-    try {
-      final picker = ImagePicker();
-      final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        builder: (context) => SafeArea(
-          child: Wrap(children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Photo Gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Camera'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-          ]),
-        ),
-      );
-      if (source == null) return;
-      final image = await picker.pickImage(source: source, imageQuality: 70);
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        setState(() =>
-            _base64Image = 'data:image/jpeg;base64,${base64Encode(bytes)}');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick image: $e')),
-        );
-      }
-    }
   }
 
   Future<void> _save() async {
@@ -169,47 +162,44 @@ class _AddSupplierPurchaseScreenState
     final qty   = double.tryParse(_qtyCtrl.text.trim())   ?? 0;
     final price = double.tryParse(_priceCtrl.text.trim()) ?? 0;
 
-    if (item.isEmpty) {
+    if (item.isEmpty || qty <= 0 || price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an item from inventory')),
+        const SnackBar(
+            content: Text('Item, quantity and price are required'),
+            backgroundColor: Colors.orange),
       );
       return;
     }
-    if (qty <= 0) {
+    if (widget.purchase.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Quantity must be greater than 0')),
-      );
-      return;
-    }
-    if (price <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Price per unit must be greater than 0')),
+        const SnackBar(content: Text('Cannot edit: missing purchase ID')),
       );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      final purchase = SupplierPurchaseModel(
-        supplierId:   widget.supplierId,
-        item:         item,
-        quantity:     qty,
-        unit:         _unitCtrl.text.trim(),
-        pricePerUnit: price,
-        totalAmount:  _computedTotal,
-        note:         _noteCtrl.text.trim(),
-        date:         _selectedDate,
-        category:     _selectedCategory ?? 'Others',
-        dueDate:      _selectedDueDate,
-        invoiceImage: _base64Image,
-      );
-      await _service.addPurchase(purchase);
+      final fmt = (DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+      final data = <String, dynamic>{
+        'itemName':     item,
+        'quantity':     qty,
+        'unit':         _unitCtrl.text.trim(),
+        'pricePerUnit': price,
+        'totalAmount':  _computedTotal,
+        'note':         _noteCtrl.text.trim(),
+        'category':     _selectedCategory ?? 'Others',
+        'date':         fmt(_selectedDate),
+        if (_selectedDueDate != null) 'dueDate': fmt(_selectedDueDate!),
+      };
+
+      await _service.updatePurchase(widget.purchase.id!, data);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Purchase recorded — stock updated automatically'),
-            backgroundColor: Colors.green,
-          ),
+              content: Text('Purchase updated successfully'),
+              backgroundColor: Colors.green),
         );
         Navigator.pop(context, true);
       }
@@ -218,10 +208,9 @@ class _AddSupplierPurchaseScreenState
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Failed: ${e.toString().replaceAll('Exception: ', '')}'),
-            backgroundColor: Colors.red,
-          ),
+              content: Text(
+                  'Failed: ${e.toString().replaceAll('Exception: ', '')}'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -240,39 +229,22 @@ class _AddSupplierPurchaseScreenState
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Add Purchase',
+        title: Text('Edit Purchase',
             style: GoogleFonts.inter(
                 fontWeight: FontWeight.bold, color: Colors.purple)),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      body: _fetchingPurchaseDetails
+          ? const Center(
+              child: CircularProgressIndicator(color: Colors.purple),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Supplier badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.purple.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.store_outlined,
-                    size: 16, color: Colors.purple),
-                const SizedBox(width: 6),
-                Text(widget.supplierName,
-                    style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple)),
-              ]),
-            ),
-            const SizedBox(height: 24),
-
             // Live total
             if (total > 0)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
+              Container(
                 margin: const EdgeInsets.only(bottom: 24),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -296,7 +268,7 @@ class _AddSupplierPurchaseScreenState
                 ),
               ),
 
-            // Item searchable autocomplete
+            // Item searchable field
             Text('Item / Product',
                 style: GoogleFonts.inter(
                     fontSize: 12,
@@ -304,26 +276,20 @@ class _AddSupplierPurchaseScreenState
                     color: AppColors.textPrimary)),
             const SizedBox(height: 6),
             _buildItemSearchField(),
-
-            // Category + unit chips (auto-filled)
             if (_selectedItem != null) ...[
               const SizedBox(height: 8),
               Row(children: [
-                if (_selectedCategory != null &&
-                    _selectedCategory!.isNotEmpty)
+                if (_selectedCategory != null && _selectedCategory!.isNotEmpty)
                   _InfoChip(
-                    icon: Icons.category_outlined,
-                    label: _selectedCategory!,
-                    color: Colors.purple,
-                  ),
-                if (_selectedCategory != null && _unitCtrl.text.isNotEmpty)
-                  const SizedBox(width: 8),
+                      icon: Icons.category_outlined,
+                      label: _selectedCategory!,
+                      color: Colors.purple),
+                const SizedBox(width: 8),
                 if (_unitCtrl.text.isNotEmpty)
                   _InfoChip(
-                    icon: Icons.straighten_outlined,
-                    label: _unitCtrl.text,
-                    color: Colors.blueGrey,
-                  ),
+                      icon: Icons.straighten_outlined,
+                      label: _unitCtrl.text,
+                      color: Colors.blueGrey),
               ]),
             ],
             const SizedBox(height: 24),
@@ -336,10 +302,9 @@ class _AddSupplierPurchaseScreenState
               const SizedBox(width: 16),
               Expanded(child: _buildField('Unit', 'kg, bags…', _unitCtrl)),
             ]),
-
             _buildField('Price per Unit (₹)', '0.00', _priceCtrl,
                 type: TextInputType.number),
-            _buildField('Note (Optional)', 'e.g. first batch', _noteCtrl),
+            _buildField('Note (Optional)', 'e.g. second batch', _noteCtrl),
 
             // Due Date
             Text('Due Date (Optional)',
@@ -368,17 +333,17 @@ class _AddSupplierPurchaseScreenState
                           ? '${_selectedDueDate!.day}/${_selectedDueDate!.month}/${_selectedDueDate!.year}'
                           : 'Select Due Date',
                       style: GoogleFonts.inter(
-                        fontSize: 15,
-                        color: _selectedDueDate != null
-                            ? AppColors.textPrimary
-                            : AppColors.textHint,
-                      ),
+                          fontSize: 15,
+                          color: _selectedDueDate != null
+                              ? AppColors.textPrimary
+                              : AppColors.textHint),
                     ),
                   ),
                   if (_selectedDueDate != null)
                     GestureDetector(
                       onTap: () => setState(() => _selectedDueDate = null),
-                      child: const Icon(Icons.clear, color: Colors.red, size: 18),
+                      child: const Icon(Icons.clear,
+                          color: Colors.red, size: 18),
                     )
                   else
                     Text('SET',
@@ -389,73 +354,6 @@ class _AddSupplierPurchaseScreenState
                 ]),
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Bill image
-            Text('Attach Bill Image (Optional)',
-                style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary)),
-            const SizedBox(height: 8),
-            if (_base64Image == null)
-              OutlinedButton.icon(
-                onPressed: _pickBillImage,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: AppColors.border),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.add_photo_alternate_outlined,
-                    color: Colors.purple),
-                label: Text('Choose Photo',
-                    style: GoogleFonts.inter(
-                        color: Colors.purple, fontWeight: FontWeight.bold)),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        height: 180,
-                        color: Colors.grey.shade100,
-                        child: Stack(fit: StackFit.expand, children: [
-                          Image.memory(
-                              base64Decode(_base64Image!.split(',')[1]),
-                              fit: BoxFit.cover),
-                          Positioned(
-                            top: 8, right: 8,
-                            child: CircleAvatar(
-                              backgroundColor: Colors.black54, radius: 16,
-                              child: IconButton(
-                                icon: const Icon(Icons.close,
-                                    color: Colors.white, size: 16),
-                                onPressed: () =>
-                                    setState(() => _base64Image = null),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ),
-                          ),
-                        ]),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text('Bill image selected',
-                            style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.textSecondary),
-                            textAlign: TextAlign.center),
-                      ),
-                    ]),
-              ),
             const SizedBox(height: 24),
 
             // Purchase date
@@ -514,9 +412,9 @@ class _AddSupplierPurchaseScreenState
                         width: 22, height: 22,
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2))
-                    : const Icon(Icons.shopping_bag_outlined),
+                    : const Icon(Icons.save_outlined),
                 label: Text(
-                  _isLoading ? 'Saving...' : 'Record Purchase',
+                  _isLoading ? 'Saving...' : 'Update Purchase',
                   style: GoogleFonts.inter(
                       fontSize: 16, fontWeight: FontWeight.bold),
                 ),
@@ -529,8 +427,6 @@ class _AddSupplierPurchaseScreenState
     );
   }
 
-  // ── Searchable item autocomplete ────────────────────────────────────────
-
   Widget _buildItemSearchField() {
     if (_isLoadingItems) {
       return Container(
@@ -542,42 +438,16 @@ class _AddSupplierPurchaseScreenState
         ),
         child: const Center(
           child: SizedBox(
-            width: 20, height: 20,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: Colors.purple),
-          ),
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.purple)),
         ),
-      );
-    }
-
-    if (_loadError != null && _inventoryItems.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.shade200),
-        ),
-        child: Row(children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Failed to load items.',
-                style: GoogleFonts.inter(fontSize: 13, color: Colors.red)),
-          ),
-          GestureDetector(
-            onTap: _fetchInventory,
-            child: Text('Retry',
-                style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: Colors.purple,
-                    fontWeight: FontWeight.bold)),
-          ),
-        ]),
       );
     }
 
     return Autocomplete<InventoryItemModel>(
+      initialValue: TextEditingValue(text: _selectedItem ?? ''),
       optionsBuilder: (TextEditingValue textEditingValue) {
         final q = textEditingValue.text.toLowerCase().trim();
         if (q.isEmpty) return _inventoryItems;
@@ -604,9 +474,7 @@ class _AddSupplierPurchaseScreenState
             });
           },
           decoration: InputDecoration(
-            hintText: _inventoryItems.isEmpty
-                ? 'No inventory items found'
-                : 'Search (${_inventoryItems.length} items available)',
+            hintText: 'Search item…',
             hintStyle:
                 GoogleFonts.inter(fontSize: 14, color: AppColors.textHint),
             prefixIcon:
@@ -625,7 +493,8 @@ class _AddSupplierPurchaseScreenState
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.purple, width: 2),
+              borderSide:
+                  const BorderSide(color: Colors.purple, width: 2),
             ),
           ),
           style: GoogleFonts.inter(
@@ -639,7 +508,7 @@ class _AddSupplierPurchaseScreenState
             elevation: 6,
             borderRadius: BorderRadius.circular(12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
+              constraints: const BoxConstraints(maxHeight: 200),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
@@ -717,13 +586,14 @@ class _AddSupplierPurchaseScreenState
   }
 }
 
-// ── Small info chip ───────────────────────────────────────────────────────────
+// ── Info chip ─────────────────────────────────────────────────────────────────
 
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  const _InfoChip({required this.icon, required this.label, required this.color});
+  const _InfoChip(
+      {required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {

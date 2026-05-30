@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/token_service.dart';
 
 import '../widgets/notification_bell.dart';
+import '../widgets/phone_field_with_country.dart';
 
 class EditCustomerScreen extends StatefulWidget {
   final CustomerModel customer;
@@ -21,6 +22,8 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
   late TextEditingController _phoneController;
   late TextEditingController _addressController;
 
+  String _fullPhoneNumber = '';
+
   bool _isLoading = false;
   late ApiService _apiService;
 
@@ -29,6 +32,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.customer.name);
     _phoneController = TextEditingController(text: widget.customer.phone);
+    _fullPhoneNumber = widget.customer.phone;
     _addressController = TextEditingController(text: widget.customer.address);
     _initService();
   }
@@ -48,10 +52,9 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
 
   Future<void> _updateCustomer() async {
     final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
     final address = _addressController.text.trim();
 
-    if (name.isEmpty || phone.isEmpty) {
+    if (name.isEmpty || _fullPhoneNumber.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name and phone are required')));
       return;
     }
@@ -62,7 +65,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
       final updatedCustomer = CustomerModel(
         id: widget.customer.id,
         name: name,
-        phone: phone,
+        phone: _fullPhoneNumber,
         address: address,
         createdAt: widget.customer.createdAt,
       );
@@ -144,7 +147,25 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
             ),
             const SizedBox(height: 48),
             _buildFieldGroup('Full Name', 'e.g. Samuel Green', _nameController),
-            _buildFieldGroup('Phone Number', '+1 (555) 000-0000', _phoneController, prefix: '+1 '),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Phone Number',
+                      style: GoogleFonts.inter(
+                          fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                  const SizedBox(height: 4),
+                  PhoneFieldWithCountry(
+                    initialValue: widget.customer.phone,
+                    hintText: '000-000-0000',
+                    onChanged: (phone) {
+                      _fullPhoneNumber = phone.completeNumber;
+                    },
+                  ),
+                ],
+              ),
+            ),
             _buildFieldGroup('Physical Address', 'Street, City, County', _addressController),
             const SizedBox(height: 24),
             // Category Slider

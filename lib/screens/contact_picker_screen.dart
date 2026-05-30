@@ -100,19 +100,36 @@ class _ContactPickerScreenState extends State<ContactPickerScreen> {
                         itemCount: _filteredContacts.length,
                         itemBuilder: (context, index) {
                           final contact = _filteredContacts[index];
-                          final phone = contact.phones.isNotEmpty ? contact.phones.first.number : 'No number';
+                          String phoneDisplay = 'No number';
+                          Phone? bestPhone;
+                          if (contact.phones.isNotEmpty) {
+                            try {
+                              bestPhone = contact.phones.firstWhere((p) => p.label == PhoneLabel.mobile);
+                            } catch (e) {
+                              bestPhone = contact.phones.first;
+                            }
+                            phoneDisplay = bestPhone.number;
+                          }
                           
                           return ListTile(
                             onTap: () {
-                              if (contact.phones.isEmpty) {
+                              if (bestPhone == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('Selected contact has no mobile number')),
                                 );
                                 return;
                               }
+                              String numStr = bestPhone.number;
+                              numStr = numStr.replaceAll(RegExp(r'[^\d+]'), '');
+                              if (!numStr.startsWith('+')) {
+                                if (numStr.startsWith('0')) {
+                                  numStr = numStr.substring(1);
+                                }
+                                numStr = '+91$numStr';
+                              }
                               Navigator.pop(context, {
                                 'name': contact.displayName,
-                                'phone': phone,
+                                'phone': numStr,
                               });
                             },
                             leading: CircleAvatar(
@@ -129,7 +146,7 @@ class _ContactPickerScreenState extends State<ContactPickerScreen> {
                               style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                             ),
                             subtitle: Text(
-                              phone,
+                              phoneDisplay,
                               style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 13),
                             ),
                           );

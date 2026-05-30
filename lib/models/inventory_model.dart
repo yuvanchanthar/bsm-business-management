@@ -72,7 +72,10 @@ class InventoryItemModel {
           itemJson['quantity']),
       unit: itemJson['unit']?.toString() ?? 'units',
       threshold: _invNum(
-          itemJson['threshold'] ?? itemJson['minStock'] ?? itemJson['minQty']),
+          itemJson['lowStockThreshold'] ??
+          itemJson['threshold'] ??
+          itemJson['minStock'] ??
+          itemJson['minQty']),
       category: itemJson['category']?.toString(),
       lastUpdated: itemJson['lastUpdated'] != null
           ? DateTime.tryParse(itemJson['lastUpdated'].toString())
@@ -84,7 +87,7 @@ class InventoryItemModel {
         'itemName': itemName,
         'currentStock': currentStock,
         'unit': unit,
-        'threshold': threshold,
+        'lowStockThreshold': threshold,
         if (category != null) 'category': category,
       };
 }

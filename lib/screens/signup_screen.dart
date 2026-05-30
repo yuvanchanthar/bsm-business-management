@@ -6,6 +6,7 @@ import '../controllers/auth_controller.dart';
 import '../core/app_colors.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/primary_button.dart';
+import '../widgets/phone_field_with_country.dart';
 import 'login_screen.dart';
 import 'main_navigation.dart';
 
@@ -19,15 +20,14 @@ class SignupScreen extends StatefulWidget {
 class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  String _fullPhoneNumber = '';
   bool _obscurePassword = true;
 
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -41,17 +41,11 @@ class _SignupScreenState extends State<SignupScreen> {
     return null;
   }
 
-  String? _validatePhone(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Phone number is required';
-    final phoneRegex = RegExp(r'^\+?[0-9]{7,15}$');
-    if (!phoneRegex.hasMatch(value.trim())) return 'Enter a valid phone number';
-    return null;
-  }
-
   String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Email is required';
-    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-    if (!emailRegex.hasMatch(value.trim())) return 'Enter a valid email address';
+    if (value != null && value.trim().isNotEmpty) {
+      final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+      if (!emailRegex.hasMatch(value.trim())) return 'Enter a valid email address';
+    }
     return null;
   }
 
@@ -66,13 +60,20 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _handleRegister() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
+    if (_fullPhoneNumber.isEmpty) {
+      _showError('Phone number is required');
+      return;
+    }
+
     final auth = context.read<AuthController>();
     if (auth.isLoading) return;
+
+    final normalizedPhone = _fullPhoneNumber.replaceAll(RegExp(r'[\s\-\(\)]'), '');
 
     final success = await auth.register(
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
-      phone: _phoneController.text.trim(),
+      phone: normalizedPhone,
       password: _passwordController.text,
     );
 
@@ -81,7 +82,6 @@ class _SignupScreenState extends State<SignupScreen> {
     if (success) {
       _nameController.clear();
       _emailController.clear();
-      _phoneController.clear();
       _passwordController.clear();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -193,7 +193,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
                 // ── Email ────────────────────────────────────────────────
                 CustomTextField(
-                  label: 'EMAIL',
+                  label: 'EMAIL (OPTIONAL)',
                   hintText: 'name@agro.com',
                   keyboardType: TextInputType.emailAddress,
                   controller: _emailController,
@@ -206,16 +206,27 @@ class _SignupScreenState extends State<SignupScreen> {
                 const SizedBox(height: 24),
 
                 // ── Phone ────────────────────────────────────────────────
-                CustomTextField(
-                  label: 'PHONE NUMBER',
-                  hintText: '+1 (555) 000-0000',
-                  keyboardType: TextInputType.phone,
-                  controller: _phoneController,
-                  validator: _validatePhone,
-                  suffixIcon: const Icon(
-                    Icons.phone_outlined,
-                    color: AppColors.textHint,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PHONE NUMBER',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textHint,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    PhoneFieldWithCountry(
+                      hintText: '+1 (555) 000-0000',
+                      onChanged: (phone) {
+                        setState(() {
+                          _fullPhoneNumber = phone.completeNumber;
+                        });
+                      },
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
 

@@ -59,7 +59,7 @@ class AuthController extends ChangeNotifier {
   // ── Login ─────────────────────────────────────────────────────────────────
 
   Future<bool> login({
-    required String email,
+    required String loginId,
     required String password,
   }) async {
     _setLoading(true);
@@ -67,7 +67,7 @@ class AuthController extends ChangeNotifier {
 
     try {
       final response = await _apiService.login(
-        email: email,
+        loginId: loginId,
         password: password,
       );
       await _tokenService.saveToken(response.token);

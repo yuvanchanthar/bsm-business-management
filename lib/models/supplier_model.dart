@@ -128,7 +128,7 @@ class SupplierPurchaseModel {
 
   Map<String, dynamic> toJson() => {
         if (supplierId != null) 'supplierId': supplierId,
-        'item': item,
+        'itemName': item,
         'quantity': quantity,
         'unit': unit,
         'pricePerUnit': pricePerUnit,
