@@ -150,7 +150,12 @@ class _LabourDetailReportScreenState extends State<LabourDetailReportScreen>
 
   Widget _buildFinanceSummary() {
     final r = _report!;
-    final isPending = r.balance > 0;
+    final double earned = r.totalEarned;
+    final double paid = r.totalPaid;
+    final double pending = (earned - paid) > 0 ? (earned - paid) : 0;
+    final double advance = (paid - earned) > 0 ? (paid - earned) : 0;
+
+    final isPending = pending > 0;
     final balanceColor = isPending ? Colors.red : Colors.green;
 
     return Container(
@@ -186,16 +191,29 @@ class _LabourDetailReportScreenState extends State<LabourDetailReportScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildWhiteStat('EARNED',  '₹${r.totalEarned.toStringAsFixed(0)}'),
-              _buildWhiteStat('PAID',    '₹${r.totalPaid.toStringAsFixed(0)}'),
+              _buildWhiteStat('EARNED',  '₹${earned.toStringAsFixed(0)}'),
+              _buildWhiteStat('PAID',    '₹${paid.toStringAsFixed(0)}'),
+              if (advance > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                  child: Column(children: [
+                    Text('ADVANCE', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue, letterSpacing: 0.5)),
+                    const SizedBox(height: 2),
+                    Text('₹${advance.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue)),
+                  ]),
+                )
+              else
+                _buildWhiteStat('ADVANCE', '₹0'),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
                 child: Column(children: [
                   Text('PENDING', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: balanceColor, letterSpacing: 0.5)),
                   const SizedBox(height: 2),
-                  Text('₹${r.balance.abs().toStringAsFixed(0)}',
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: balanceColor)),
+                  Text('₹${pending.toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: balanceColor)),
                 ]),
               ),
             ],

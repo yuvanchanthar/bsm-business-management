@@ -9,6 +9,7 @@ import '../services/token_service.dart';
 import '../widgets/add_category_dialog.dart';
 import '../widgets/add_inventory_item_dialog.dart';
 import '../widgets/add_existing_stock_dialog.dart';
+import '../widgets/edit_inventory_item_dialog.dart';
 import 'inventory_detail_screen.dart';
 
 class InventoryListScreen extends StatefulWidget {
@@ -104,6 +105,131 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
   }
 
   void _setItemFilter(String f) { setState(() => _activeFilter = f); _applyItemFilters(); }
+
+  // ── Edit / Delete handlers ────────────────────────────────────────────────
+
+  /// Opens the EditInventoryItemDialog pre-filled with [item]'s current values.
+  void _showEditDialog(InventoryItemModel item) {
+    showDialog(
+      context: context,
+      builder: (_) => EditInventoryItemDialog(
+        item: item,
+        categories: _allCategories,
+        onSaved: _fetchInventory,
+      ),
+    );
+  }
+
+  /// Shows a confirmation dialog then calls DELETE /inventory/:id.
+  /// Surfaces backend error messages (e.g. "Cannot delete item with remaining stock").
+  Future<void> _confirmDelete(InventoryItemModel item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        title: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Text('Delete Item',
+              style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary)),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete',
+                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+            Text('"${item.itemName}"?',
+                style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.info_outline, color: Colors.red, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Items with remaining stock cannot be deleted.',
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.red.shade700),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: Text('Delete', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final id = item.id;
+    if (id == null) return;
+
+    try {
+      await _repo.deleteItem(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('"${item.itemName}" deleted.',
+            style: GoogleFonts.inter(color: Colors.white)),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ));
+      _fetchInventory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          e.toString().replaceAll('Exception: ', ''),
+          style: GoogleFonts.inter(color: Colors.white),
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 5),
+      ));
+    }
+  }
 
   // ── Categories Logic ───────────────────────────────────────────────────────
 
@@ -401,12 +527,24 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                       separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (ctx, i) {
                         final item = _filteredItems[i];
-                        return _InventoryCard(item: item, onTap: () async {
-                          if (item.id == null) return;
-                          await Navigator.push(ctx, MaterialPageRoute(
-                            builder: (_) => InventoryDetailScreen(itemId: item.id!, itemName: item.itemName)));
-                          _fetchInventory();
-                        });
+                        return _InventoryCard(
+                          item: item,
+                          onTap: () async {
+                            if (item.id == null) return;
+                            await Navigator.push(
+                              ctx,
+                              MaterialPageRoute(
+                                builder: (_) => InventoryDetailScreen(
+                                  itemId: item.id!,
+                                  itemName: item.itemName,
+                                ),
+                              ),
+                            );
+                            _fetchInventory();
+                          },
+                          onEdit: () => _showEditDialog(item),
+                          onDelete: () => _confirmDelete(item),
+                        );
                       },
                     ),
                   ),
@@ -465,7 +603,15 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
 class _InventoryCard extends StatelessWidget {
   final InventoryItemModel item;
   final VoidCallback onTap;
-  const _InventoryCard({required this.item, required this.onTap});
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  const _InventoryCard({
+    required this.item,
+    required this.onTap,
+    this.onEdit,
+    this.onDelete,
+  });
 
   Color get _c => item.isOutOfStock ? Colors.red : item.isLowStock ? Colors.orange : const Color(0xFF00897B);
   String get _lbl => item.isOutOfStock ? 'OUT OF STOCK' : item.isLowStock ? 'LOW STOCK' : 'NORMAL';
@@ -496,6 +642,33 @@ class _InventoryCard extends StatelessWidget {
             Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: _c.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
               child: Text(_lbl, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: _c))),
+            // ── Popup action menu ──────────────────────────────────────────
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, color: AppColors.textSecondary, size: 20),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onSelected: (value) {
+                if (value == 'edit') onEdit?.call();
+                if (value == 'delete') onDelete?.call();
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(children: [
+                    const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF00897B)),
+                    const SizedBox(width: 10),
+                    Text('Edit', style: GoogleFonts.inter(fontSize: 14)),
+                  ]),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                    const SizedBox(width: 10),
+                    Text('Delete', style: GoogleFonts.inter(fontSize: 14, color: Colors.red)),
+                  ]),
+                ),
+              ],
+            ),
           ]),
           const SizedBox(height: 14),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [

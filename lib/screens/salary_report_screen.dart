@@ -143,10 +143,15 @@ class _SalaryReportScreenState extends State<SalaryReportScreen> {
   }
 
   Widget _buildReportCard(LabourReportModel r) {
-    final isPending  = r.pendingBalance > 0;
-    final isOverpaid = r.pendingBalance < 0;
-    final balanceColor = isPending ? Colors.red : (isOverpaid ? Colors.orange : Colors.green);
-    final balanceLabel = isPending ? 'PENDING' : (isOverpaid ? 'OVERPAID' : 'SETTLED');
+    final double earned = r.totalEarned;
+    final double paid = r.totalPaid;
+    final double pending = (earned - paid) > 0 ? (earned - paid) : 0;
+    final double advance = (paid - earned) > 0 ? (paid - earned) : 0;
+
+    final isPending = pending > 0;
+    final isAdvance = advance > 0;
+    final balanceColor = isAdvance ? Colors.blue : (isPending ? Colors.red : Colors.green);
+    final balanceLabel = isAdvance ? 'ADVANCE' : (isPending ? 'PENDING' : 'SETTLED');
 
     return InkWell(
       onTap: () => Navigator.push(
@@ -203,9 +208,10 @@ class _SalaryReportScreenState extends State<SalaryReportScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildFinancialItem('EARNED',  '₹${r.totalEarned.toStringAsFixed(0)}', AppColors.textPrimary),
-                _buildFinancialItem('PAID',    '₹${r.totalPaid.toStringAsFixed(0)}',   Colors.green),
-                _buildFinancialItem('PENDING', '₹${r.pendingBalance.abs().toStringAsFixed(0)}', balanceColor),
+                _buildFinancialItem('EARNED',  '₹${earned.toStringAsFixed(0)}', AppColors.textPrimary),
+                _buildFinancialItem('PAID',    '₹${paid.toStringAsFixed(0)}',   Colors.green),
+                _buildFinancialItem('ADVANCE', '₹${advance.toStringAsFixed(0)}', isAdvance ? Colors.blue : AppColors.textSecondary),
+                _buildFinancialItem('PENDING', '₹${pending.toStringAsFixed(0)}', isPending ? Colors.red : AppColors.textSecondary),
               ],
             ),
           ],

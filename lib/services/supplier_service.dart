@@ -350,4 +350,45 @@ class SupplierService {
       throw Exception(_extractError(e));
     }
   }
+
+  /// PUT /inventory/:id — update item metadata (name, category, unit, threshold).
+  /// Only the provided (non-null) fields are sent to the backend.
+  Future<bool> updateInventoryItem(
+    String id, {
+    String? itemName,
+    String? categoryName,
+    String? unit,
+    double? lowStockThreshold,
+    int? currentStock,
+    String? stockCorrectionNote,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (itemName != null) body['itemName'] = itemName;
+      if (categoryName != null) body['categoryName'] = categoryName;
+      if (unit != null) body['unit'] = unit;
+      if (lowStockThreshold != null) body['lowStockThreshold'] = lowStockThreshold;
+      if (currentStock != null) {
+        body['currentStock'] = currentStock;
+        if (stockCorrectionNote != null) {
+          body['stockCorrectionNote'] = stockCorrectionNote;
+        }
+      }
+      await _dio.put('/inventory/$id', data: body);
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /inventory/:id — removes item and its stock history.
+  /// Backend blocks deletion when currentStock > 0 and returns
+  /// { error: "Cannot delete item with remaining stock" }.
+  Future<void> deleteInventoryItem(String id) async {
+    try {
+      await _dio.delete('/inventory/$id');
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
 }

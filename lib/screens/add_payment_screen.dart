@@ -271,9 +271,9 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton.icon(
-                  onPressed: (_isLoading || isOverpaid) ? null : _handleSubmit,
+                  onPressed: _isLoading ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isOverpaid ? Colors.grey : AppColors.primaryGreen,
+                    backgroundColor: AppColors.primaryGreen,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     elevation: 0,

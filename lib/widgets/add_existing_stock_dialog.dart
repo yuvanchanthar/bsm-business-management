@@ -105,9 +105,17 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: EdgeInsets.fromLTRB(
+        24, 24, 24,
+        MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Form(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          child: Form(
           key: _formKey,
           child: SingleChildScrollView(
             child: Column(
@@ -158,6 +166,7 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                 ] else ...[
                   DropdownButtonFormField<InventoryItemModel>(
                     value: _selectedItem,
+                    isExpanded: true,
                     decoration: InputDecoration(
                       labelText: 'Select Item',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -165,11 +174,19 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                     ),
                     items: items.map((item) => DropdownMenuItem(
                       value: item,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                        Text(item.itemName, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                        Text('Stock: ${item.currentStock.toStringAsFixed(0)} ${item.unit}',
-                          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
-                      ]),
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(
+                            text: item.itemName,
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                          ),
+                          TextSpan(
+                            text: '  ·  ${item.currentStock.toStringAsFixed(0)} ${item.unit}',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                        ]),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     )).toList(),
                     onChanged: (v) => setState(() => _selectedItem = v),
                     validator: (v) => v == null ? 'Select an item' : null,
@@ -276,6 +293,7 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
               ],
             ),
           ),
+        ),
         ),
       ),
     );

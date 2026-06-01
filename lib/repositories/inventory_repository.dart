@@ -58,6 +58,36 @@ class InventoryRepository {
     );
   }
 
+  /// PUT /inventory/:id — update item metadata (name, category, unit, threshold).
+  /// Pass only the fields you want to change; null fields are ignored.
+  Future<void> updateItem(
+    String id, {
+    String? itemName,
+    String? categoryName,
+    String? unit,
+    double? lowStockThreshold,
+    int? currentStock,
+    String? stockCorrectionNote,
+  }) async {
+    final svc = await _svc();
+    await svc.updateInventoryItem(
+      id,
+      itemName: itemName,
+      categoryName: categoryName,
+      unit: unit,
+      lowStockThreshold: lowStockThreshold,
+      currentStock: currentStock,
+      stockCorrectionNote: stockCorrectionNote,
+    );
+  }
+
+  /// DELETE /inventory/:id — removes item and its stock history.
+  /// Throws a user-friendly [Exception] if backend rejects (e.g. stock > 0).
+  Future<void> deleteItem(String id) async {
+    final svc = await _svc();
+    await svc.deleteInventoryItem(id);
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   /// Removes entries with duplicate itemName, keeping the first occurrence.
