@@ -24,7 +24,9 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = false;
   
-  double _oldBalance = 0;
+  double _oldBalance  = 0;   // raw backend balance (kept for fallback)
+  double _totalEarned = 0;   // cumulative earned salary
+  double _totalPaid   = 0;   // cumulative total paid
   String _phone = '';
   final SmsSettingsService _smsService = SmsSettingsService();
 
@@ -42,8 +44,10 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
       final report = await apiService.getLabourDetailReport(widget.labourId);
       if (mounted) {
         setState(() {
-          _oldBalance = report.balance;
-          _phone = report.phone;
+          _oldBalance  = report.balance;
+          _totalEarned = report.totalEarned;
+          _totalPaid   = report.totalPaid;
+          _phone       = report.phone;
         });
       }
     } catch (e) {
@@ -93,14 +97,19 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
       );
       await apiService.addPayment(payment);
 
-      // Re-fetch details to get new balance
+      // Re-fetch details to get updated earned / paid / balance
       double newBalance = 0;
+      double totalEarned = 0;
+      double totalPaid   = 0;
       try {
         final updatedReport = await apiService.getLabourDetailReport(widget.labourId);
-        newBalance = updatedReport.balance;
+        newBalance   = updatedReport.balance;
+        totalEarned  = updatedReport.totalEarned;
+        totalPaid    = updatedReport.totalPaid;
       } catch (e) {
         debugPrint('Failed to fetch updated balance: $e');
-        newBalance = _oldBalance - payment.amount;
+        newBalance  = _oldBalance - payment.amount;
+        totalPaid   = payment.amount;  // best-effort fallback
       }
 
       if (mounted) {
@@ -108,8 +117,8 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
           const SnackBar(content: Text('✅ Payment recorded successfully'), backgroundColor: Colors.green),
         );
         
-        // Trigger SMS flow
-        await _sendPaymentSMS(_oldBalance, payment.amount, newBalance);
+        // Trigger SMS flow with full salary breakdown
+        await _sendPaymentSMS(totalEarned, totalPaid);
         
         if (mounted) Navigator.pop(context, true);
       }
@@ -124,10 +133,16 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String amountText = _amountController.text.trim();
-    final double enteredAmount = double.tryParse(amountText) ?? 0;
-    final double remainingBalance = _oldBalance - enteredAmount;
-    final bool isOverpaid = enteredAmount > _oldBalance && _oldBalance > 0;
+    // ── Derived balances ──────────────────────────────────────────────────
+    // Same formula as SalaryReportScreen / LabourDetailReportScreen.
+    final String amountText       = _amountController.text.trim();
+    final double enteredAmount    = double.tryParse(amountText) ?? 0;
+    final double pendingBalance   = (_totalEarned - _totalPaid) > 0
+        ? (_totalEarned - _totalPaid) : 0;
+    final double advanceBalance   = (_totalPaid - _totalEarned) > 0
+        ? (_totalPaid - _totalEarned) : 0;
+    final double remainingBalance = pendingBalance - enteredAmount;
+    final bool   isOverpaid       = enteredAmount > pendingBalance && pendingBalance > 0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -169,11 +184,26 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
               ),
               const SizedBox(height: 28),
 
-              // Current Balance Card
-              _buildBalanceSummaryCard(
-                'Current Balance',
-                _oldBalance,
-                Colors.blue,
+              // ── Balance summary row ─────────────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildTopBalanceCard(
+                      'Pending Salary',
+                      pendingBalance,
+                      AppColors.primaryGreen,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildTopBalanceCard(
+                      'Advance Balance',
+                      advanceBalance,
+                      advanceBalance > 0 ? Colors.orange : AppColors.textSecondary,
+                      dimmed: advanceBalance == 0,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
 
@@ -301,7 +331,14 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     );
   }
 
-  Future<void> _sendPaymentSMS(double oldBal, double amount, double newBal) async {
+  /// Sends a salary summary SMS to the labour after a payment is recorded.
+  ///
+  /// [totalEarned] and [totalPaid] come from the re-fetched [LabourDetailReport]
+  /// so they reflect the FULL cumulative position (not just this payment).
+  ///
+  /// Advance / pending are derived the same way as [SalaryReportScreen] and
+  /// [LabourDetailReportScreen] to guarantee consistency across the app.
+  Future<void> _sendPaymentSMS(double totalEarned, double totalPaid) async {
     if (_phone.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -316,26 +353,37 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
       return;
     }
 
-    final String message = '''
-Hello ${widget.labourName},
+    // ── Advance / Pending calculation ──────────────────────────────────────
+    // Mirrors the formula in SalaryReportScreen and LabourDetailReportScreen.
+    final double pendingAmount = (totalEarned - totalPaid) > 0
+        ? (totalEarned - totalPaid)
+        : 0;
+    final double advanceAmount = (totalPaid - totalEarned) > 0
+        ? (totalPaid - totalEarned)
+        : 0;
 
-Payment processed successfully.
+    final fmt = NumberFormat('#,##,###');
 
-Previous Balance:
-₹${NumberFormat('#,##,###').format(oldBal.abs())}
-
-Amount Paid:
-₹${NumberFormat('#,##,###').format(amount)}
-
-Remaining Balance:
-₹${NumberFormat('#,##,###').format(newBal.abs())}
-
-Thank you,
-BSM Agro Industry''';
+    // ── SMS body ───────────────────────────────────────────────────────────
+    final StringBuffer buf = StringBuffer();
+    buf.writeln('Hello ${widget.labourName},');
+    buf.writeln();
+    buf.writeln('Payment processed successfully.');
+    buf.writeln();
+    buf.writeln('Earned Salary : ₹${fmt.format(totalEarned)}');
+    buf.writeln('Total Paid    : ₹${fmt.format(totalPaid)}');
+    if (advanceAmount > 0) {
+      buf.writeln('Advance Amount: ₹${fmt.format(advanceAmount)}');
+    }
+    buf.writeln('Pending Salary: ₹${fmt.format(pendingAmount)}');
+    buf.writeln();
+    buf.writeln('Thank you,');
+    buf.write('BSM Agro Industry');
 
     final cleanPhone = _phone.replaceAll(RegExp(r'\D'), '');
-    final Uri url = Uri.parse('sms:$cleanPhone?body=${Uri.encodeComponent(message)}');
-    
+    final Uri url = Uri.parse(
+        'sms:$cleanPhone?body=${Uri.encodeComponent(buf.toString())}');
+
     if (await canLaunchUrl(url)) {
       await launchUrl(url);
     } else {
@@ -364,6 +412,40 @@ BSM Agro Industry''';
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBalanceCard(String label, double amount, Color color, {bool dimmed = false}) {
+    final effectiveColor = dimmed ? color.withValues(alpha: 0.5) : color;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: effectiveColor.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: effectiveColor.withValues(alpha: 0.1), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '₹${NumberFormat('#,##,###').format(amount.abs())}',
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: effectiveColor,
+            ),
           ),
         ],
       ),

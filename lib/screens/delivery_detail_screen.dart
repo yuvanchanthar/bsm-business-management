@@ -238,6 +238,10 @@ class _DeliveryDetailScreenState extends State<DeliveryDetailScreen> {
           _buildInfoRow(Icons.calendar_today_outlined, 'Date', DateFormat('dd MMM yyyy').format(d.timestamp)),
           const Divider(height: 24),
           _buildInfoRow(Icons.access_time, 'Time', DateFormat('hh:mm aa').format(d.timestamp)),
+          if (d.vehicleNumber != null && d.vehicleNumber!.isNotEmpty) ...[
+            const Divider(height: 24),
+            _buildInfoRow(Icons.directions_car_outlined, 'Vehicle No.', d.vehicleNumber!),
+          ],
           if (d.invoice != null) ...[
             const Divider(height: 24),
             _buildInfoRow(Icons.receipt_outlined, 'Invoice No.', d.invoice!.invoiceNumber ?? 'N/A'),

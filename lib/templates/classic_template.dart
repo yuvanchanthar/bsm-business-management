@@ -103,6 +103,9 @@ class ClassicTemplate extends BaseInvoiceTemplate {
                 if (delivery.invoice?.gstNumber?.isNotEmpty == true)
                   pw.Text('GST: ${delivery.invoice!.gstNumber}',
                       style: pw.TextStyle(font: font, fontSize: 11)),
+                if (delivery.vehicleNumber?.isNotEmpty == true)
+                  pw.Text('Vehicle Number: ${delivery.vehicleNumber}',
+                      style: pw.TextStyle(font: font, fontSize: 11)),
                 ...delivery.invoice?.customFields.map((f) =>
                     pw.Text('${f['label']}: ${f['value']}',
                         style: pw.TextStyle(font: font, fontSize: 11))) ?? [],

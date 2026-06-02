@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'token_service.dart';
@@ -6,6 +7,10 @@ import 'token_service.dart';
 /// Call [DioClient.instance] after [TokenService.getInstance()] resolves.
 class DioClient {
   static const String _baseUrl = 'https://bsm-backend-6e0m.onrender.com/api';
+
+  /// Maximum number of automatic retries for transient network errors.
+  /// Delays follow exponential back-off: 2 s → 4 s → 8 s.
+  static const int _maxRetries = 3;
 
   static Dio? _dio;
 
@@ -62,7 +67,57 @@ class DioClient {
       ),
     );
 
-    // 2️⃣ Debug-only logger interceptor (redacts auth tokens).
+    // 2️⃣ Retry interceptor — exponential back-off for transient failures.
+    // Retries up to [_maxRetries] times on timeout / connectivity errors.
+    // 4xx/5xx responses are intentionally NOT retried (business logic errors).
+    _dio!.interceptors.add(
+      InterceptorsWrapper(
+        onError: (DioException error, handler) async {
+          final isRetryable =
+              error.type == DioExceptionType.connectionTimeout ||
+              error.type == DioExceptionType.receiveTimeout ||
+              error.type == DioExceptionType.connectionError;
+
+          if (!isRetryable) {
+            return handler.next(error);
+          }
+
+          final attempt =
+              (error.requestOptions.extra['_retryCount'] as int?) ?? 0;
+
+          if (attempt >= _maxRetries) {
+            // All retries exhausted — propagate the original error.
+            return handler.next(error);
+          }
+
+          const delays = [2, 4, 8]; // seconds
+          final waitSeconds = delays[attempt];
+
+          _log(
+            '↺ Retry ${attempt + 1}/$_maxRetries after ${waitSeconds}s '
+            '(${error.type}) ${error.requestOptions.method} '
+            '${error.requestOptions.uri}',
+          );
+
+          await Future<void>.delayed(Duration(seconds: waitSeconds));
+
+          // Stamp the incremented count so the next retry-interception
+          // knows which attempt this is.
+          error.requestOptions.extra['_retryCount'] = attempt + 1;
+
+          try {
+            // Re-run through the full interceptor chain (auth header
+            // will be re-injected by interceptor 1️⃣ above).
+            final response = await _dio!.fetch<dynamic>(error.requestOptions);
+            return handler.resolve(response);
+          } on DioException catch (e) {
+            return handler.next(e);
+          }
+        },
+      ),
+    );
+
+    // 3️⃣ Debug-only logger interceptor (redacts auth tokens).
     // Avoids leaking secrets and reduces overhead in release builds.
     if (!kReleaseMode) {
       _dio!.interceptors.add(

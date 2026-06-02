@@ -125,6 +125,12 @@ class DarkTemplate extends BaseInvoiceTemplate {
                     if (delivery.invoice?.address?.isNotEmpty == true)
                       pw.Text(delivery.invoice!.address!,
                           style: pw.TextStyle(font: font, fontSize: 10, color: mutedColor)),
+                    if (delivery.vehicleNumber?.isNotEmpty == true)
+                      pw.Text('Vehicle Number: ${delivery.vehicleNumber}',
+                          style: pw.TextStyle(font: font, fontSize: 10, color: mutedColor)),
+                    ...delivery.invoice?.customFields.map((f) =>
+                        pw.Text('${f['label']}: ${f['value']}',
+                            style: pw.TextStyle(font: font, fontSize: 10, color: mutedColor))) ?? [],
                   ]),
                   pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
                     _metaRow('Crew:', delivery.crewLeader, font, fontBold, mutedColor, textColor),

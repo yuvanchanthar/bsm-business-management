@@ -13,6 +13,7 @@ class InvoiceModel {
   final String? gstNumber;
   final String? companyName;
   final String? address;
+  final String? vehicleNumber;
   final List<Map<String, dynamic>> customFields;
   final List<ProductItem> products;
   final List<ProductItem> items;
@@ -33,6 +34,7 @@ class InvoiceModel {
     this.gstNumber,
     this.companyName,
     this.address,
+    this.vehicleNumber,
     this.customFields = const [],
     required this.products,
     this.items = const [],
@@ -115,6 +117,7 @@ class InvoiceModel {
       gstNumber: json['gstNumber']?.toString(),
       companyName: json['companyName']?.toString(),
       address: json['address']?.toString(),
+      vehicleNumber: json['vehicleNumber']?.toString(),
       customFields: _parseCustomFields(json['customFields']),
       products: products,
       items: items,
@@ -154,6 +157,7 @@ class InvoiceModel {
         'gstNumber': gstNumber,
         'companyName': companyName,
         'address': address,
+        'vehicleNumber': vehicleNumber,
         'customFields': customFields,
         'items': items.isNotEmpty ? items.map((p) => p.toJson()).toList() : products.map((p) => {
           'product': p.name,
@@ -182,6 +186,7 @@ class InvoiceModel {
       gstNumber: delivery.invoice?.gstNumber,
       companyName: delivery.invoice?.companyName,
       address: delivery.invoice?.address,
+      vehicleNumber: delivery.vehicleNumber,
       customFields: delivery.invoice?.customFields ?? [],
       products: delivery.products,
       items: delivery.items,
@@ -224,7 +229,9 @@ class InvoiceModel {
         address: address,
         customFields: customFields,
         templateId: templateId,
+        vehicleNumber: vehicleNumber,
       ),
+      vehicleNumber: vehicleNumber,
     );
   }
 }

@@ -30,16 +30,25 @@ class SupplierService {
     return [];
   }
 
+  /// Extracts a human-readable message from a DioException.
+  ///
+  /// Each transient error type gets a distinct, accurate message so the user
+  /// is not misled (e.g. a Render cold-start timeout is NOT "no internet").
   String _extractError(DioException e) {
     // Full error logging for debug builds
     print('[SupplierService] DioException type: ${e.type}');
     print('[SupplierService] Status code: ${e.response?.statusCode}');
     print('[SupplierService] Response data: ${e.response?.data}');
 
-    if (e.type == DioExceptionType.connectionTimeout ||
-        e.type == DioExceptionType.receiveTimeout ||
-        e.type == DioExceptionType.connectionError) {
-      return 'No internet connection. Please try again.';
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+        return 'Server is starting up. Please wait a moment and try again.';
+      case DioExceptionType.receiveTimeout:
+        return 'Server is taking too long to respond. Please try again.';
+      case DioExceptionType.connectionError:
+        return 'No internet connection. Please check your network.';
+      default:
+        break;
     }
     final data = e.response?.data;
     if (data is Map) {

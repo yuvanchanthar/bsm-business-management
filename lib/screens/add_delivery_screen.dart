@@ -31,6 +31,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _gstController = TextEditingController();
   final _companyController = TextEditingController();
   final _addressController = TextEditingController();
+  final _vehicleNumberController = TextEditingController();
   String _selectedPriority = 'NORMAL';
 
   // ── 3-step flow state ────────────────────────────────────────────────────
@@ -150,6 +151,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     _gstController.dispose();
     _companyController.dispose();
     _addressController.dispose();
+    _vehicleNumberController.dispose();
     for (var field in _customFieldsControllers) {
       field['label']?.dispose();
       field['value']?.dispose();
@@ -242,6 +244,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         companyName: _companyController.text.trim().isEmpty ? null : _companyController.text.trim(),
         address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
         customFields: customFieldsList,
+        vehicleNumber: _vehicleNumberController.text.trim().isEmpty ? null : _vehicleNumberController.text.trim(),
       );
 
       final createdDelivery = await _apiService.createDelivery(delivery);
@@ -327,7 +330,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     }
   }
 
-  /// Step 3: Generate PDF from the chosen template, then open DeliverySuccessScreen.
   Future<void> _handleGenerateInvoice() async {
     final delivery = _savedDelivery;
     final templateId = _localTemplateId;
@@ -339,8 +341,28 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       debugPrint('[AddDelivery] Persisting and Generating invoice for delivery ${delivery.id} with template $templateId');
       final provider = context.read<TemplateProvider>();
       
+      // Step 1: Compare re-fetched delivery customFields with local delivery state
+      final localCustomFields = _customFieldsControllers.map((field) {
+        return {
+          'label': field['label']?.text.trim() ?? '',
+          'value': field['value']?.text.trim() ?? '',
+        };
+      }).where((f) => f['label']!.isNotEmpty && f['value']!.isNotEmpty).toList();
+
+      Delivery deliveryToGenerate = delivery;
+      
+      // Step 2 & 3: If fetched is missing customFields but local has them, merge and use.
+      if ((delivery.invoice?.customFields.isEmpty ?? true) && localCustomFields.isNotEmpty) {
+        final mergedInvoice = delivery.invoice?.copyWith(customFields: localCustomFields) ?? DeliveryInvoice(
+          id: '',
+          amount: delivery.deliveryTotal,
+          customFields: localCustomFields,
+        );
+        deliveryToGenerate = delivery.copyWith(invoice: mergedInvoice);
+      }
+
       final result = await provider.updateAndGenerateInvoice(
-        delivery: delivery,
+        delivery: deliveryToGenerate,
         templateId: templateId,
       );
 
@@ -481,6 +503,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                                           _selectedCustomer = customer.name;
                                           _selectedCustomerModel = customer;
                                           _customerSearchController.text = customer.name;
+                                          _addressController.text = customer.address.isNotEmpty ? customer.address : '';
                                           _showSuggestions = false;
                                           // Defocus the text field
                                           FocusScope.of(context).unfocus();
@@ -677,6 +700,11 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           controller: _crewLeaderController,
                           decoration: _inputDecoration('Crew leader name', Icons.engineering_outlined),
                           validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _vehicleNumberController,
+                          decoration: _inputDecoration('Vehicle Number (e.g. TN 37 AB 1234)', Icons.directions_car_outlined),
                         ),
                         const SizedBox(height: 20),
                         Text('Priority', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),

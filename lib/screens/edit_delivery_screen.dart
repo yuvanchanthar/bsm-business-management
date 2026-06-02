@@ -36,6 +36,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
   final _gstController = TextEditingController();
   final _companyController = TextEditingController();
   final _addressController = TextEditingController();
+  final _vehicleNumberController = TextEditingController();
   String _selectedPriority = 'NORMAL';
   bool _isLoading = false;
 
@@ -62,6 +63,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
     _gstController.text = widget.delivery.invoice?.gstNumber ?? '';
     _companyController.text = widget.delivery.invoice?.companyName ?? '';
     _addressController.text = widget.delivery.invoice?.address ?? '';
+    _vehicleNumberController.text = widget.delivery.vehicleNumber ?? widget.delivery.invoice?.vehicleNumber ?? '';
     _selectedPriority = widget.delivery.priority;
 
     _fetchCustomers();
@@ -137,6 +139,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
     _gstController.dispose();
     _companyController.dispose();
     _addressController.dispose();
+    _vehicleNumberController.dispose();
     for (final entry in _productEntries) { entry.dispose(); }
     for (var field in _customFieldsControllers) {
       field['label']?.dispose();
@@ -175,6 +178,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
         priority: _selectedPriority,
         status: widget.delivery.status,
         timestamp: widget.delivery.timestamp,
+        vehicleNumber: _vehicleNumberController.text.trim().isEmpty ? null : _vehicleNumberController.text.trim(),
         invoice: DeliveryInvoice(
           id: widget.delivery.invoice?.id ?? '',
           amount: _calculateGrandTotal,
@@ -186,6 +190,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
             'label': f['label']?.text.trim() ?? '',
             'value': f['value']?.text.trim() ?? '',
           }).where((f) => f['label']!.isNotEmpty && f['value']!.isNotEmpty).toList(),
+          vehicleNumber: _vehicleNumberController.text.trim().isEmpty ? null : _vehicleNumberController.text.trim(),
         ),
       );
 
@@ -512,6 +517,11 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
                         controller: _crewLeaderController,
                         decoration: _inputDecoration('Crew leader name', Icons.engineering_outlined),
                         validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _vehicleNumberController,
+                        decoration: _inputDecoration('Vehicle Number (e.g. TN 37 AB 1234)', Icons.directions_car_outlined),
                       ),
                       const SizedBox(height: 20),
                       Text('Priority',

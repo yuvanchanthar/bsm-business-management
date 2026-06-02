@@ -27,6 +27,7 @@ class DeliveryInvoice {
   final String? address;
   final String? templateId;
   final List<Map<String, dynamic>> customFields;
+  final String? vehicleNumber;
 
   const DeliveryInvoice({
     required this.id,
@@ -40,6 +41,7 @@ class DeliveryInvoice {
     this.address,
     this.templateId,
     this.customFields = const [],
+    this.vehicleNumber,
   });
 
   factory DeliveryInvoice.fromJson(Map<String, dynamic> json) {
@@ -55,6 +57,7 @@ class DeliveryInvoice {
       address: json['address']?.toString(),
       templateId: json['templateId']?.toString(),
       customFields: _parseCustomFields(json['customFields']),
+      vehicleNumber: json['vehicleNumber']?.toString(),
     );
   }
 
@@ -73,6 +76,36 @@ class DeliveryInvoice {
       return converted;
     }
     return [];
+  }
+
+  DeliveryInvoice copyWith({
+    String? id,
+    String? invoiceNumber,
+    double? amount,
+    String? pdfUrl,
+    String? customerName,
+    String? customerPhone,
+    String? gstNumber,
+    String? companyName,
+    String? address,
+    String? templateId,
+    List<Map<String, dynamic>>? customFields,
+    String? vehicleNumber,
+  }) {
+    return DeliveryInvoice(
+      id: id ?? this.id,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      amount: amount ?? this.amount,
+      pdfUrl: pdfUrl ?? this.pdfUrl,
+      customerName: customerName ?? this.customerName,
+      customerPhone: customerPhone ?? this.customerPhone,
+      gstNumber: gstNumber ?? this.gstNumber,
+      companyName: companyName ?? this.companyName,
+      address: address ?? this.address,
+      templateId: templateId ?? this.templateId,
+      customFields: customFields ?? this.customFields,
+      vehicleNumber: vehicleNumber ?? this.vehicleNumber,
+    );
   }
 }
 
@@ -141,6 +174,7 @@ class Delivery {
   final DateTime timestamp;
   final DeliveryInvoice? invoice;
   final bool stockDeducted;
+  final String? vehicleNumber;
 
   Delivery({
     required this.id,
@@ -158,6 +192,7 @@ class Delivery {
     required this.timestamp,
     this.invoice,
     this.stockDeducted = false,
+    this.vehicleNumber,
   });
 
   double get totalQuantity => _sourceItems.fold(0.0, (sum, item) => sum + item.quantity);
@@ -215,6 +250,7 @@ class Delivery {
       'companyName': invoice?.companyName,
       'address': invoice?.address,
       'customFields': invoice?.customFields ?? [],
+      'vehicleNumber': vehicleNumber,
     };
   }
 
@@ -238,9 +274,26 @@ class Delivery {
 
     // Parse embedded invoice snapshot if present
     final rawInvoice = json['invoice'];
-    final DeliveryInvoice? invoice = rawInvoice is Map<String, dynamic>
-        ? DeliveryInvoice.fromJson(rawInvoice)
-        : null;
+    
+    final customFields = (json['invoice']?['customFields'] ?? json['customFields'] ?? []) as List;
+
+    DeliveryInvoice? invoice;
+    if (rawInvoice is Map<String, dynamic>) {
+      final invoiceData = Map<String, dynamic>.from(rawInvoice);
+      invoiceData['customFields'] = customFields;
+      // Map vehicleNumber if present at root but not in invoice map
+      if (invoiceData['vehicleNumber'] == null && json['vehicleNumber'] != null) {
+        invoiceData['vehicleNumber'] = json['vehicleNumber'];
+      }
+      invoice = DeliveryInvoice.fromJson(invoiceData);
+    } else if (customFields.isNotEmpty) {
+      invoice = DeliveryInvoice(
+        id: '',
+        amount: _asDouble(json['deliveryTotal'] ?? json['grandTotal']),
+        customFields: DeliveryInvoice._parseCustomFields(customFields),
+        vehicleNumber: json['vehicleNumber']?.toString(),
+      );
+    }
 
     final status = json['status'] ?? 'pending';
     print('[MODEL DEBUG] Delivery ID: ${json['_id'] ?? json['id']}, Status: $status');
@@ -261,6 +314,7 @@ class Delivery {
       timestamp: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) ?? DateTime.now() : DateTime.now(),
       invoice: invoice,
       stockDeducted: json['stockDeducted'] ?? false,
+      vehicleNumber: json['vehicleNumber']?.toString() ?? invoice?.vehicleNumber,
     );
   }
 
@@ -281,6 +335,7 @@ class Delivery {
     String? address,
     List<Map<String, dynamic>> customFields = const [],
     bool stockDeducted = false,
+    String? vehicleNumber,
   }) {
     final timestamp = DateTime.now();
     final id = 'BSM-${timestamp.millisecondsSinceEpoch}';
@@ -304,9 +359,11 @@ class Delivery {
         gstNumber: gstNumber,
         companyName: companyName,
         address: address,
-        customFields: customFields
+        customFields: customFields,
+        vehicleNumber: vehicleNumber,
       ),
       stockDeducted: stockDeducted,
+      vehicleNumber: vehicleNumber,
     );
   }
 
@@ -326,6 +383,7 @@ class Delivery {
     DateTime? timestamp,
     DeliveryInvoice? invoice,
     bool? stockDeducted,
+    String? vehicleNumber,
   }) {
     return Delivery(
       id: id ?? this.id,
@@ -343,6 +401,7 @@ class Delivery {
       timestamp: timestamp ?? this.timestamp,
       invoice: invoice ?? this.invoice,
       stockDeducted: stockDeducted ?? this.stockDeducted,
+      vehicleNumber: vehicleNumber ?? this.vehicleNumber,
     );
   }
 }

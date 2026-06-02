@@ -131,6 +131,12 @@ class CorporateTemplate extends BaseInvoiceTemplate {
                   if (delivery.invoice?.gstNumber?.isNotEmpty == true)
                     pw.Text('GSTIN: ${delivery.invoice!.gstNumber}',
                         style: pw.TextStyle(font: font, fontSize: 11, color: PdfColors.grey700)),
+                  if (delivery.vehicleNumber?.isNotEmpty == true)
+                    pw.Text('Vehicle Number: ${delivery.vehicleNumber}',
+                        style: pw.TextStyle(font: font, fontSize: 11, color: PdfColors.grey700)),
+                  ...delivery.invoice?.customFields.map((f) =>
+                      pw.Text('${f['label']}: ${f['value']}',
+                          style: pw.TextStyle(font: font, fontSize: 11, color: PdfColors.grey700))) ?? [],
                 ]),
               ),
             ],
