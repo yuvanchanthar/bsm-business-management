@@ -245,10 +245,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
                               role: 'CUSTOMER',
                               name: customer.name,
                               phone: customer.phone,
-                              balance: customer.balance,
-                              type: customer.balance > 10000 ? CustomerType.overdue : CustomerType.none,
+                              balance: customer.netBalance,
+                              type: customer.netBalance > 10000 ? CustomerType.overdue : CustomerType.none,
                               isLedger: true,
                               showAvatar: true,
+                              onViewDetailsClosed: () {
+                                _fetchCustomers();
+                              },
                               onEdit: () async {
                                 final result = await Navigator.push(
                                   context,

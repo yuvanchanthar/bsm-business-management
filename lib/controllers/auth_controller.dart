@@ -3,6 +3,7 @@ import '../models/user_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import '../services/dio_client.dart';
+import '../services/fcm_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -49,6 +50,8 @@ class AuthController extends ChangeNotifier {
       final user = await _apiService.getProfile();
       _currentUser = user;
       await _tokenService.saveUser(user);
+      await FcmService.instance.registerToken();
+
       notifyListeners();
     } catch (_) {
       // If 401 or network error, let user keep using cached data.
@@ -74,6 +77,11 @@ class AuthController extends ChangeNotifier {
       await _tokenService.saveUser(response.user);
       _currentUser = response.user;
       _status = AuthStatus.authenticated;
+      // Register the FCM token with the backend after a successful login.
+      // Runs fire-and-forget so it never blocks the login UX.
+      FcmService.instance.registerToken().catchError(
+        (e) => debugPrint('[Auth] FCM registerToken failed: $e'),
+      );
       _setLoading(false);
       return true;
     } catch (e) {
@@ -115,6 +123,11 @@ class AuthController extends ChangeNotifier {
   // ── Logout ────────────────────────────────────────────────────────────────
 
   Future<void> logout() async {
+    // Remove the FCM token from the backend BEFORE clearing the auth token,
+    // because the DELETE call needs the Bearer token to be present.
+    await FcmService.instance.unregisterToken().catchError(
+      (e) => debugPrint('[Auth] FCM unregisterToken failed: $e'),
+    );
     await _tokenService.clearAll();
     DioClient.reset(); // fresh Dio on next login
     _currentUser = null;

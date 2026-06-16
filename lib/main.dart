@@ -6,9 +6,14 @@ import 'controllers/auth_controller.dart';
 import 'core/app_colors.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/delivery_list_screen.dart';
+import 'screens/customers_screen.dart';
+import 'screens/inventory_list_screen.dart';
 import 'services/dio_client.dart';
 import 'services/api_service.dart';
 import 'services/token_service.dart';
+import 'services/fcm_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 // Invoice Template System — DI imports
 import 'features/invoice/data/datasources/template_local_datasource.dart';
@@ -19,13 +24,24 @@ import 'features/invoice/domain/usecases/generate_invoice_usecase.dart';
 import 'features/invoice/services/invoice_generator_service.dart';
 import 'features/invoice/presentation/providers/template_provider.dart';
 
+// Navigator key is declared at top level so FcmService.init can receive it
+// before runApp creates the widget tree.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize TokenService (SharedPreferences) before runApp
+  // 1. Firebase must be initialized before FCM.
+  await Firebase.initializeApp();
+
+  // 2. Initialize FCM service (registers background handler, sets up channels,
+  //    requests notification permission, wires up tap navigation).
+  await FcmService.init(navigatorKey: appNavigatorKey);
+
+  // 3. Initialize TokenService (SharedPreferences) before runApp.
   final tokenService = await TokenService.getInstance();
 
-  // Build the invoice template dependency graph once at startup
+  // 4. Build the invoice template dependency graph once at startup.
   final prefs        = await SharedPreferences.getInstance();
   final datasource   = TemplateLocalDatasource(prefs);
   final repository   = TemplateRepositoryImpl(datasource);
@@ -34,8 +50,8 @@ void main() async {
   final getDefault   = GetDefaultTemplateUsecase(repository);
   final saveDefault  = SaveDefaultTemplateUsecase(repository);
   final generateInv  = GenerateInvoiceUsecase(generatorSvc);
-  
-  // Inject ApiService into TemplateProvider
+
+  // Inject ApiService into TemplateProvider.
   final apiService   = ApiService(tokenService);
 
   final templateProvider = TemplateProvider(
@@ -45,7 +61,7 @@ void main() async {
     apiService: apiService,
   );
 
-  // Load default template preference from local storage at startup
+  // Load default template preference from local storage at startup.
   await templateProvider.loadDefaultTemplate();
 
   runApp(MyApp(
@@ -70,13 +86,12 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   late final AuthController _authController;
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     _authController = AuthController();
-    // Wire up the controller with the token service; triggers auto-login check
+    // Wire up the controller with the token service; triggers auto-login check.
     _authController.init(widget.tokenService);
 
     // Centralized 401 handling: logout once, then redirect to login.
@@ -86,7 +101,7 @@ class _MyAppState extends State<MyApp> {
 
       await _authController.logout();
 
-      final nav = _navigatorKey.currentState;
+      final nav = appNavigatorKey.currentState;
       if (nav == null) return;
       nav.pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -106,7 +121,7 @@ class _MyAppState extends State<MyApp> {
       child: MaterialApp(
         title: 'BSM Agro Industry',
         debugShowCheckedModeBanner: false,
-        navigatorKey: _navigatorKey,
+        navigatorKey: appNavigatorKey,
         theme: ThemeData(
           useMaterial3: true,
           primaryColor: AppColors.primaryGreen,
@@ -143,8 +158,15 @@ class _MyAppState extends State<MyApp> {
             displayColor: AppColors.textPrimary,
           ),
         ),
+        // Named routes used by FcmService for notification-tap navigation.
+        routes: {
+          '/delivery':  (_) => const DeliveryListScreen(),
+          '/customers': (_) => const CustomersScreen(),
+          '/inventory': (_) => const InventoryListScreen(),
+        },
         home: const SplashScreen(),
       ),
     );
   }
 }
+

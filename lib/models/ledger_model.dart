@@ -30,13 +30,15 @@ class CustomerLedgerModel {
     // Backend sends: delivered, paid, balance
     // Fallback to old keys (totalDelivered, totalPaid, finalBalance) for
     // backward compatibility with any cached or legacy responses.
-    double resolve(List<String> keys) {
+    double? resolve(List<String> keys) {
       for (final k in keys) {
-        final v = json[k];
-        final parsed = _asDouble(v, fallback: double.nan);
-        if (!parsed.isNaN) return parsed;
+        if (json.containsKey(k)) {
+          final v = json[k];
+          final parsed = _asDouble(v, fallback: double.nan);
+          if (!parsed.isNaN) return parsed;
+        }
       }
-      return 0.0;
+      return null;
     }
 
     final txns = (json['transactions'] as List?)
@@ -51,22 +53,29 @@ class CustomerLedgerModel {
       if (t.type == LedgerEntryType.payment) calcPaid += t.amount;
     }
 
-    double backendDelivered = resolve(['delivered', 'totalDelivered']);
-    double backendPaid = resolve(['paid', 'totalPaid']);
-    double backendBalance = resolve(['balance', 'finalBalance']);
+    final customer = CustomerModel.fromJson(
+        json['customer'] as Map<String, dynamic>? ?? {});
+
+    double? backendDelivered = resolve(['delivered', 'totalDelivered']);
+    double? backendPaid = resolve(['paid', 'totalPaid']);
+    double? backendBalance = resolve(['balance', 'finalBalance']);
+
+    final double finalDelivered = backendDelivered ?? calcDelivered;
+    final double finalPaid = backendPaid ?? calcPaid;
+    final double calculatedBalance = customer.openingBalance + finalDelivered - finalPaid;
+    final double finalBalance = backendBalance ?? calculatedBalance;
 
     return CustomerLedgerModel(
-      customer: CustomerModel.fromJson(
-          json['customer'] as Map<String, dynamic>? ?? {}),
+      customer: customer,
       transactions: txns,
-      totalDelivered: backendDelivered > 0 ? backendDelivered : calcDelivered,
-      totalPaid: backendPaid > 0 ? backendPaid : calcPaid,
-      finalBalance: backendBalance != 0 ? backendBalance : (calcDelivered - calcPaid),
+      totalDelivered: finalDelivered,
+      totalPaid: finalPaid,
+      finalBalance: finalBalance,
     );
   }
 }
 
-enum LedgerEntryType { delivery, payment }
+enum LedgerEntryType { delivery, payment, openingBalance }
 
 class LedgerEntry {
   final DateTime date;
@@ -107,14 +116,25 @@ class LedgerEntry {
     print('RAW_JSON: $json');
     print('--------------------------------------------------');
 
+    // Resolve type explicitly — no silent fallback to payment for unknown types.
+    LedgerEntryType resolvedType;
+    final rawType = json['type']?.toString();
+    if (rawType == 'delivery') {
+      resolvedType = LedgerEntryType.delivery;
+    } else if (rawType == 'opening_balance') {
+      resolvedType = LedgerEntryType.openingBalance;
+    } else {
+      // 'payment' or any other known type defaults to payment.
+      resolvedType = LedgerEntryType.payment;
+    }
+
     return LedgerEntry(
-      date: json['date'] != null 
-          ? DateTime.tryParse(json['date']) ?? DateTime.now() 
+      date: json['date'] != null
+          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      type: json['type'] == 'delivery' 
-          ? LedgerEntryType.delivery 
-          : LedgerEntryType.payment,
-      description: json['description'] ?? '',
+      type: resolvedType,
+      // Backend sends the label in 'note'; 'description' kept as legacy fallback.
+      description: json['note']?.toString() ?? json['description']?.toString() ?? '',
       amount: _asDouble(
         json['amount'] ??
             json['total'] ??

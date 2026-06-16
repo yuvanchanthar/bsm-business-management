@@ -21,6 +21,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
   late TextEditingController _addressController;
+  late TextEditingController _openingBalanceController;
 
   String _fullPhoneNumber = '';
 
@@ -34,6 +35,11 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     _phoneController = TextEditingController(text: widget.customer.phone);
     _fullPhoneNumber = widget.customer.phone;
     _addressController = TextEditingController(text: widget.customer.address);
+    _openingBalanceController = TextEditingController(
+      text: widget.customer.openingBalance > 0
+          ? widget.customer.openingBalance.toStringAsFixed(0)
+          : '',
+    );
     _initService();
   }
 
@@ -47,6 +53,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _openingBalanceController.dispose();
     super.dispose();
   }
 
@@ -59,6 +66,14 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
       return;
     }
 
+    final openingBalance = double.tryParse(_openingBalanceController.text.trim()) ?? 0.0;
+    if (openingBalance < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Opening balance cannot be negative')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -67,6 +82,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         name: name,
         phone: _fullPhoneNumber,
         address: address,
+        openingBalance: openingBalance,
         createdAt: widget.customer.createdAt,
       );
       
@@ -167,6 +183,12 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
               ),
             ),
             _buildFieldGroup('Physical Address', 'Street, City, County', _addressController),
+            _buildNumericFieldGroup(
+              'Opening Balance (Optional)',
+              'e.g. 15000',
+              _openingBalanceController,
+              prefix: '₹ ',
+            ),
             const SizedBox(height: 24),
             // Category Slider
             Container(
@@ -263,6 +285,45 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
           const SizedBox(height: 4),
           TextField(
             controller: controller,
+            decoration: InputDecoration(
+              prefixText: prefix,
+              prefixStyle: GoogleFonts.inter(fontSize: 18, color: AppColors.textHint),
+              hintText: hint,
+              hintStyle: GoogleFonts.inter(fontSize: 18, color: AppColors.textHint),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              enabledBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.border, width: 1.5),
+              ),
+              focusedBorder: const UnderlineInputBorder(
+                borderSide: BorderSide(color: AppColors.primaryGreen, width: 2.0),
+              ),
+            ),
+            style: GoogleFonts.inter(fontSize: 18, color: AppColors.textPrimary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNumericFieldGroup(String label, String hint, TextEditingController controller, {String? prefix}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               prefixText: prefix,
               prefixStyle: GoogleFonts.inter(fontSize: 18, color: AppColors.textHint),

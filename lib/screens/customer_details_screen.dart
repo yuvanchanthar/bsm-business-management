@@ -2,17 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../core/app_colors.dart';
-import '../models/invoice_model.dart';
 import '../models/ledger_model.dart';
 import '../models/payment_model.dart';
 import '../services/api_service.dart';
-import '../services/pdf_service.dart';
 import '../services/token_service.dart';
 import '../services/sms_settings_service.dart';
-import '../features/invoice/services/invoice_generator_service.dart';
 import 'delivery_detail_screen.dart';
 
 // Simple DTO to keep SliverList builder clean.
@@ -37,6 +33,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   CustomerLedgerModel? _ledger;
   bool _isLoading = true;
   String? _error;
+  bool _dataChanged = false;
 
   @override
   void initState() {
@@ -95,7 +92,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Future<void> _showAddPaymentDialog() async {
     final amountController = TextEditingController();
     final noteController = TextEditingController();
-    final double currentBalance = _ledger!.finalBalance;
+    final double currentBalance = _ledger!.customer.openingBalance +
+        _ledger!.totalDelivered -
+        _ledger!.totalPaid;
+    // For display: pending is only the positive portion of net balance
+    final double pendingBalance = currentBalance > 0 ? currentBalance : 0.0;
 
     final result = await showDialog<bool>(
       context: context,
@@ -104,7 +105,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           final String amountText = amountController.text.trim();
           final double enteredAmount = double.tryParse(amountText) ?? 0;
           final double remainingBalance = currentBalance - enteredAmount;
-          final bool isOverpaid = enteredAmount > currentBalance && currentBalance > 0;
+          final bool isOverpaid = enteredAmount > pendingBalance && pendingBalance > 0;
 
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -113,11 +114,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Current Balance Card
+                  // Pending Balance Card
                   _buildDialogBalanceCard(
-                    'Current Balance',
-                    currentBalance,
-                    Colors.blue,
+                    'Pending Balance',
+                    pendingBalance,
+                    pendingBalance > 0 ? Colors.red.shade600 : AppColors.primaryGreen,
                   ),
                   const SizedBox(height: 16),
                   
@@ -145,11 +146,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       isOverpaid ? Colors.red : AppColors.primaryGreen,
                     ),
                     const SizedBox(height: 8),
-                    // Remaining Balance Card
+                    // Remaining Balance Card — show abs so it never shows negative
                     _buildDialogBalanceCard(
-                      'Remaining Balance',
-                      remainingBalance,
-                      remainingBalance < 0 ? Colors.red : AppColors.primaryGreen,
+                      remainingBalance >= 0 ? 'Remaining Pending' : 'Advance Credit',
+                      remainingBalance.abs(),
+                      remainingBalance < 0 ? AppColors.primaryGreen : AppColors.primaryGreen,
                     ),
                     if (isOverpaid)
                       Padding(
@@ -221,6 +222,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
       // 3. Re-fetch the ledger — this is the ONLY source of truth.
       await _fetchLedger();
+      _dataChanged = true;
       final newBalance = _ledger!.finalBalance;
 
       // 4. Confirm to the user only after the UI is updated.
@@ -280,7 +282,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: () => Navigator.pop(context, _dataChanged),
         ),
         title: Text(
           'Customer Ledger',
@@ -303,8 +305,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
+      body: WillPopScope(
+        onWillPop: () async {
+          Navigator.pop(context, _dataChanged);
+          return false;
+        },
+        child: CustomScrollView(
+          slivers: [
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             sliver: SliverList(
@@ -373,14 +380,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
+        ),
       ),
     );
   }
 
   Widget _buildSummaryCard(CustomerLedgerModel ledger) {
-    final balance = ledger.finalBalance;
-    final isPending = balance > 0;
-    final isAdvance = balance < 0;
+    final double netBalance = ledger.customer.openingBalance + ledger.totalDelivered - ledger.totalPaid;
+    final isPending = netBalance >= 0;
+    final isAdvance = netBalance < 0;
+    final pendingAmount = isPending ? netBalance : 0.0;
+    final advanceAmount = isAdvance ? netBalance.abs() : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -449,8 +459,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          _buildCommunicationButtons(ledger.customer, balance),
+          _buildCommunicationButtons(ledger.customer, netBalance),
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 16),
@@ -459,9 +468,57 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             children: [
               _buildMetric('DELIVERED', '₹${ledger.totalDelivered.toStringAsFixed(0)}', Colors.black),
               _buildMetric('PAID', '₹${ledger.totalPaid.toStringAsFixed(0)}', AppColors.primaryGreen),
-              _buildMetric('BALANCE', '₹${balance.abs().toStringAsFixed(0)}', isPending ? Colors.red : AppColors.primaryGreen),
+              _buildMetric(
+                'PENDING',
+                '₹${pendingAmount.toStringAsFixed(0)}',
+                isPending ? Colors.red.shade700 : AppColors.textSecondary,
+              ),
+              _buildMetric(
+                'ADVANCE',
+                '₹${advanceAmount.toStringAsFixed(0)}',
+                isAdvance ? AppColors.primaryGreen : AppColors.textSecondary,
+              ),
             ],
           ),
+          if (ledger.customer.openingBalance > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined,
+                          size: 16, color: Colors.amber.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Opening Balance (Old Balance)',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.amber.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '₹${ledger.customer.openingBalance.toStringAsFixed(0)}',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.amber.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -516,15 +573,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   List<_LedgerItemWithBalance> _computeLedgerItemsWithBalance(CustomerLedgerModel ledger) {
+    // Seed from 0 — the opening_balance transaction (if present) is already in
+    // the sorted transactions list from the backend and will add its own amount
+    // to the running balance, so we must NOT pre-seed with openingBalance.
     double runningBalance = 0;
-    // The transactions from the server are sorted oldest first to correctly calculate running balance
-    // But we might want to display latest first. Let's calculate balances then reverse for display.
-    
     final List<_LedgerItemWithBalance> itemsWithBalance = [];
     for (var t in ledger.transactions) {
-      if (t.type == LedgerEntryType.delivery) {
+      if (t.type == LedgerEntryType.delivery ||
+          t.type == LedgerEntryType.openingBalance) {
+        // Both deliveries and the opening balance increase what the customer owes.
         runningBalance += t.amount;
       } else {
+        // Payments reduce the running balance.
         runningBalance -= t.amount;
       }
       itemsWithBalance.add(_LedgerItemWithBalance(entry: t, balance: runningBalance));
@@ -574,8 +634,30 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   Widget _buildLedgerRow(LedgerEntry t, double bal) {
     final isDelivery = t.type == LedgerEntryType.delivery;
-    final amountColor = isDelivery ? const Color(0xFFE64A19) : const Color(0xFF2E7D32); // Orange-Red for Debit, Green for Credit
-    
+    final isOpeningBalance = t.type == LedgerEntryType.openingBalance;
+
+    // Colour scheme:
+    //   Opening Balance → Amber  (it's an initial debt, not a new delivery)
+    //   Delivery        → Orange-Red  (debit)
+    //   Payment         → Green  (credit)
+    final Color amountColor = isOpeningBalance
+        ? Colors.amber.shade800
+        : isDelivery
+            ? const Color(0xFFE64A19)
+            : const Color(0xFF2E7D32);
+
+    final IconData rowIcon = isOpeningBalance
+        ? Icons.account_balance_wallet_outlined
+        : isDelivery
+            ? Icons.local_shipping_outlined
+            : Icons.payments_outlined;
+
+    final String rowLabel = isOpeningBalance
+        ? 'Opening Balance'
+        : isDelivery
+            ? 'Delivery'
+            : 'Payment';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -590,7 +672,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         ],
       ),
       child: Material(
-        color: isDelivery ? Colors.white : Colors.white.withValues(alpha: 0.7),
+        color: isOpeningBalance
+            ? Colors.amber.withValues(alpha: 0.06)
+            : isDelivery
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -607,13 +693,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    isDelivery ? Icons.local_shipping_outlined : Icons.payments_outlined,
+                    rowIcon,
                     color: amountColor,
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 16),
-                
+
                 // Details
                 Expanded(
                   child: Column(
@@ -622,7 +708,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       Row(
                         children: [
                           Text(
-                            isDelivery ? 'Delivery' : 'Payment',
+                            rowLabel,
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -637,7 +723,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        DateFormat('hh:mm aa').format(t.date),
+                        isOpeningBalance
+                            ? 'Old balance brought forward'
+                            : DateFormat('hh:mm aa').format(t.date),
                         style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                       ),
                       const SizedBox(height: 6),
@@ -652,7 +740,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     ],
                   ),
                 ),
-                
+
                 // Amount
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,

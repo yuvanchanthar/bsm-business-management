@@ -15,6 +15,7 @@ class CustomerCard extends StatelessWidget {
   final bool showAvatar;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onViewDetailsClosed;
 
 
   const CustomerCard({
@@ -29,12 +30,18 @@ class CustomerCard extends StatelessWidget {
     this.showAvatar = false,
     this.onEdit,
     this.onDelete,
+    this.onViewDetailsClosed,
   });
 
   @override
   Widget build(BuildContext context) {
-    bool isPositive = balance >= 0;
-    String formattedBalance = '${isPositive ? '' : '-'}\u20A6${balance.abs().toStringAsFixed(2)}';
+    // balance > 0  → customer owes us money (Pending)
+    // balance < 0  → customer has overpaid (Advance)
+    // balance == 0 → settled (Clear)
+    final isPending = balance > 0;
+    final isAdvance = balance < 0;
+    final pendingAmount  = isPending ? balance : 0.0;
+    final advanceAmount  = isAdvance ? balance.abs() : 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -149,23 +156,57 @@ class CustomerCard extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'LEDGER BALANCE',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
-                    ),
+                  // Pending balance column
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'PENDING',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '₹${pendingAmount.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isPending ? Colors.red.shade700 : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    formattedBalance,
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isPositive
-                          ? AppColors.primaryGreen
-                          : AppColors.negativeBalance,
-                    ),
+                  // Divider
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: Colors.grey.shade200,
+                  ),
+                  // Advance balance column
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'ADVANCE',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '₹${advanceAmount.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isAdvance ? AppColors.primaryGreen : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -178,7 +219,7 @@ class CustomerCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'BALANCE',
+                      isPending ? 'PENDING' : (isAdvance ? 'ADVANCE' : 'BALANCE'),
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -186,11 +227,11 @@ class CustomerCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      formattedBalance,
+                      '₹${(isPending ? pendingAmount : (isAdvance ? advanceAmount : 0.0)).toStringAsFixed(0)}',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.primaryGreen,
+                        color: isPending ? Colors.red.shade700 : AppColors.primaryGreen,
                       ),
                     ),
                   ],
@@ -221,14 +262,17 @@ class CustomerCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       if (id != null) {
-                        Navigator.push(
+                        final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => CustomerDetailsScreen(customerId: id!),
                           ),
                         );
+                        if (result == true && onViewDetailsClosed != null) {
+                          onViewDetailsClosed!();
+                        }
                       }
                     },
                     style: OutlinedButton.styleFrom(

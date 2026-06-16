@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "749414234051",
+    "project_id": "bsm-app-d445a",
+    "storage_bucket": "bsm-app-d445a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:749414234051:android:4ef8ac176dae64c575ef76",
+        "android_client_info": {
+          "package_name": "com.example.bsm_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAK5Q5zYLZJydGMPgLoJMuS7qqn5qkij7I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
