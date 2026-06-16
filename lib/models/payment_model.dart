@@ -31,6 +31,11 @@ class PaymentModel {
   final String? note;
   final DateTime? createdAt;
 
+  // ── Void / restore support ──────────────────────────────────────────────
+  final bool isVoided;
+  final String? voidedReason;
+  final DateTime? voidedAt;
+
   PaymentModel({
     this.id,
     this.labourId,
@@ -40,6 +45,9 @@ class PaymentModel {
     required this.date,
     this.note,
     this.createdAt,
+    this.isVoided = false,
+    this.voidedReason,
+    this.voidedAt,
   });
 
   factory PaymentModel.fromJson(Map<String, dynamic> json) {
@@ -55,6 +63,11 @@ class PaymentModel {
       note: json['note']?.toString(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+      isVoided: json['isVoided'] == true || json['isDeleted'] == true,
+      voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
+      voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
           : null,
     );
   }

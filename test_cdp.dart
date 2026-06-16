@@ -1,0 +1,1 @@
+﻿import 'package:flutter/material.dart'; void main() { CalendarDatePicker(initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now(), onDateChanged: (d){}, dayBuilder: (context, date) => Container()); }

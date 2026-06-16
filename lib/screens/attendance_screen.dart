@@ -23,17 +23,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _isSubmitting = false;
   DateTime _selectedDate = DateTime.now();
 
+  /// The month currently shown in the calendar (day is always 1)
+  late DateTime _calendarMonth;
+
+  /// Set of "YYYY-MM-DD" strings that have attendance records
+  Set<String> _attendedDates = {};
+
   // ── Status constants ──────────────────────────────────────────────────────
 
-  static const String kFullDay  = 'full_day';
-  static const String kHalfDay  = 'half_day';
-  static const String kAbsent   = 'absent';
+  static const String kFullDay = 'full_day';
+  static const String kHalfDay = 'half_day';
+  static const String kAbsent = 'absent';
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _calendarMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
     _initService();
   }
 
@@ -41,9 +48,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final tokenService = await TokenService.getInstance();
     _apiService = ApiService(tokenService);
     _fetchData();
+    _fetchAttendedDates();
   }
 
   // ── Data fetching ─────────────────────────────────────────────────────────
+
+  Future<void> _fetchAttendedDates() async {
+    try {
+      final dates = await _apiService.getAttendedDateStrings();
+      debugPrint('[Calendar] Attended dates received in widget: ${dates.length}');
+      for (final d in dates) {
+        debugPrint('[Calendar]   Attended: $d');
+      }
+      if (mounted) setState(() => _attendedDates = dates);
+      debugPrint('[Calendar] _attendedDates set in state. Length: ${_attendedDates.length}');
+    } catch (e) {
+      // Non-critical – calendar shading is a visual enhancement
+      debugPrint('[Calendar] Could not load attended dates: $e');
+    }
+  }
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
@@ -53,7 +76,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _apiService.getAttendanceRecords(_selectedDate),
       ]);
 
-      final labours          = results[0] as List<LabourModel>;
+      final labours = results[0] as List<LabourModel>;
       final attendanceRecords = results[1] as List<AttendanceEntry>;
 
       if (mounted) {
@@ -65,10 +88,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             final existing =
                 attendanceRecords.where((r) => r.labourId == l.id).firstOrNull;
             if (existing != null) {
-              // fromJson already normalises 'present' → 'full_day'
               _statusMap[l.id!] = existing.status;
             } else {
-              // Show empty selection for labours with no existing record for this date
               _statusMap[l.id!] = null;
             }
           }
@@ -78,43 +99,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load data: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to load data: $e'),
+              backgroundColor: Colors.red),
         );
         setState(() => _isLoading = false);
       }
     }
   }
 
-  // ── Date picker ───────────────────────────────────────────────────────────
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: AppColors.primaryGreen),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() => _selectedDate = picked);
-      _fetchData();
-    }
-  }
-
   // ── Summary getters ───────────────────────────────────────────────────────
 
-  int get _fullDayCount  => _statusMap.values.where((s) => s == kFullDay).length;
-  int get _halfDayCount  => _statusMap.values.where((s) => s == kHalfDay).length;
-  int get _absentCount   => _statusMap.values.where((s) => s == kAbsent).length;
+  int get _fullDayCount => _statusMap.values.where((s) => s == kFullDay).length;
+  int get _halfDayCount => _statusMap.values.where((s) => s == kHalfDay).length;
+  int get _absentCount => _statusMap.values.where((s) => s == kAbsent).length;
 
   /// Full Day = 1 day, Half Day = 0.5 day, Absent = 0.
   double get _daysWorked => _fullDayCount + (_halfDayCount * 0.5);
-
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Build entries for all labours that have a status selected
       final entries = _labours
           .where((l) => _statusMap[l.id!] != null)
           .map((l) {
@@ -156,7 +156,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
       }
 
-      await _fetchData();
+      // Refresh both the daily data AND the attended-dates set so the calendar
+      // immediately reflects the new shading.
+      await Future.wait([_fetchData(), _fetchAttendedDates()]);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -168,14 +170,50 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Calendar helpers ──────────────────────────────────────────────────────
 
-  String get _formattedDate {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${_selectedDate.day} ${months[_selectedDate.month - 1]} ${_selectedDate.year}';
+  String _toDateKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  bool _hasAttendance(DateTime d) {
+    final key = _toDateKey(d);
+    final result = _attendedDates.contains(key);
+    // Only print for the current calendar month to avoid log spam
+    if (d.month == _calendarMonth.month) {
+      debugPrint('[Calendar] _hasAttendance($key) → $result  (set size: ${_attendedDates.length})');
+    }
+    return result;
+  }
+
+  bool _isSelected(DateTime d) =>
+      d.year == _selectedDate.year &&
+      d.month == _selectedDate.month &&
+      d.day == _selectedDate.day;
+
+  bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  void _selectDay(DateTime d) {
+    if (d.isAfter(DateTime.now())) return; // disallow future dates
+    setState(() => _selectedDate = d);
+    _fetchData();
+  }
+
+  void _prevMonth() {
+    setState(() {
+      _calendarMonth =
+          DateTime(_calendarMonth.year, _calendarMonth.month - 1, 1);
+    });
+  }
+
+  void _nextMonth() {
+    final now = DateTime.now();
+    final next =
+        DateTime(_calendarMonth.year, _calendarMonth.month + 1, 1);
+    if (next.isAfter(DateTime(now.year, now.month + 1, 1))) return;
+    setState(() => _calendarMonth = next);
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -193,69 +231,53 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         ),
         title: Text(
           'Daily Attendance',
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+          style: GoogleFonts.inter(
+              fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.primaryGreen),
-            onPressed: _fetchData,
+            onPressed: () {
+              _fetchData();
+              _fetchAttendedDates();
+            },
           ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primaryGreen))
           : Column(
               children: [
-                // ── Header ─────────────────────────────────────────────────
+                // ── Calendar + Stats ────────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Date picker
-                      GestureDetector(
-                        onTap: _pickDate,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.calendar_today_outlined,
-                                  size: 18, color: AppColors.primaryGreen),
-                              const SizedBox(width: 8),
-                              Text(
-                                _formattedDate,
-                                style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.arrow_drop_down, color: AppColors.textSecondary),
-                            ],
-                          ),
-                        ),
-                      ),
+                      // Inline calendar
+                      _buildCalendar(),
 
                       const SizedBox(height: 16),
 
                       // ── Stats row (4 cards) ─────────────────────────────
                       Row(
                         children: [
-                          _buildStat('FULL DAYS', '$_fullDayCount', Colors.green),
+                          _buildStat(
+                              'FULL DAYS', '$_fullDayCount', Colors.green),
                           const SizedBox(width: 8),
-                          _buildStat('HALF DAYS', '$_halfDayCount', Colors.orange),
+                          _buildStat(
+                              'HALF DAYS', '$_halfDayCount', Colors.orange),
                           const SizedBox(width: 8),
                           _buildStat('ABSENT', '$_absentCount', Colors.red),
                           const SizedBox(width: 8),
-                          _buildStat('WORKED', _daysWorked % 1 == 0
-                              ? '${_daysWorked.toInt()}'
-                              : _daysWorked.toStringAsFixed(1), AppColors.primaryGreen),
+                          _buildStat(
+                              'WORKED',
+                              _daysWorked % 1 == 0
+                                  ? '${_daysWorked.toInt()}'
+                                  : _daysWorked.toStringAsFixed(1),
+                              AppColors.primaryGreen),
                         ],
                       ),
                     ],
@@ -270,17 +292,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ? Center(
                           child: Text(
                             'No labours to mark attendance for.',
-                            style: GoogleFonts.inter(color: AppColors.textSecondary),
+                            style: GoogleFonts.inter(
+                                color: AppColors.textSecondary),
                           ),
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 4),
                           itemCount: _labours.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: 10),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
                           itemBuilder: (context, index) {
-                             final labour = _labours[index];
-                             final status = _statusMap[labour.id!];
-                             return _buildAttendanceRow(labour, status);
+                            final labour = _labours[index];
+                            final status = _statusMap[labour.id!];
+                            return _buildAttendanceRow(labour, status);
                           },
                         ),
                 ),
@@ -296,19 +321,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryGreen,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
                         elevation: 0,
                       ),
                       icon: _isSubmitting
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
                             )
                           : const Icon(Icons.send, size: 20),
                       label: Text(
                         _isSubmitting ? 'Saving...' : 'Save Attendance',
-                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.inter(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -316,6 +344,238 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ],
             ),
     );
+  }
+
+  // ── Custom inline calendar ────────────────────────────────────────────────
+
+  Widget _buildCalendar() {
+    const weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    // Build month grid
+    final firstDay = _calendarMonth;
+    final daysInMonth =
+        DateUtils.getDaysInMonth(firstDay.year, firstDay.month);
+
+    // weekday 1=Mon ... 7=Sun  →  offset so Monday = column 0
+    final startWeekday = firstDay.weekday; // 1-7
+    final leadingEmpty = startWeekday - 1; // blanks before day 1
+
+    final cells = <DateTime?>[];
+    for (int i = 0; i < leadingEmpty; i++) cells.add(null);
+    for (int d = 1; d <= daysInMonth; d++) {
+      cells.add(DateTime(firstDay.year, firstDay.month, d));
+    }
+    // Pad to full rows
+    while (cells.length % 7 != 0) cells.add(null);
+
+    final monthName = _monthLabel(firstDay.month);
+    final now = DateTime.now();
+    final isCurrentOrFutureMonth =
+        DateTime(firstDay.year, firstDay.month + 1, 1)
+            .isAfter(DateTime(now.year, now.month + 1, 1));
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Month header ──────────────────────────────────────────────
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left,
+                      color: AppColors.textPrimary),
+                  onPressed: _prevMonth,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                Text(
+                  '$monthName ${firstDay.year}',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.chevron_right,
+                      color: isCurrentOrFutureMonth
+                          ? Colors.grey.shade300
+                          : AppColors.textPrimary),
+                  onPressed: isCurrentOrFutureMonth ? null : _nextMonth,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Weekday header row ────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: weekDays
+                  .map(
+                    (d) => Expanded(
+                      child: Center(
+                        child: Text(
+                          d,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          // ── Day cells grid ────────────────────────────────────────────
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Column(
+              children: [
+                for (int row = 0;
+                    row < cells.length ~/ 7;
+                    row++) ...[
+                  Row(
+                    children: List.generate(7, (col) {
+                      final date = cells[row * 7 + col];
+                      return Expanded(child: _buildDayCell(date));
+                    }),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // ── Legend ────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryGreen.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Attendance recorded',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryGreen,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Selected',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayCell(DateTime? date) {
+    if (date == null) {
+      return const SizedBox(height: 38);
+    }
+
+    final selected = _isSelected(date);
+    final attended = _hasAttendance(date);
+    final today = _isToday(date);
+    final isFuture = date.isAfter(DateTime.now());
+
+    Color? bgColor;
+    Color textColor = AppColors.textPrimary;
+    FontWeight fontWeight = FontWeight.w500;
+    BoxBorder? border;
+
+    if (selected) {
+      bgColor = AppColors.primaryGreen;
+      textColor = Colors.white;
+      fontWeight = FontWeight.bold;
+    } else if (attended) {
+      bgColor = AppColors.primaryGreen.withValues(alpha: 0.18);
+      textColor = AppColors.primaryGreen;
+      fontWeight = FontWeight.w600;
+    } else if (today) {
+      border = Border.all(color: AppColors.primaryGreen, width: 1.5);
+    }
+
+    if (isFuture) {
+      textColor = Colors.grey.shade400;
+      bgColor = null;
+      border = null;
+    }
+
+    return GestureDetector(
+      onTap: isFuture ? null : () => _selectDay(date),
+      child: Container(
+        margin: const EdgeInsets.all(2),
+        height: 34,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(8),
+          border: border,
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          '${date.day}',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: fontWeight,
+            color: textColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _monthLabel(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return months[month - 1];
   }
 
   // ── Labour attendance card ───────────────────────────────────────────────

@@ -15,7 +15,19 @@ import '../models/monthly_report_model.dart';
 import 'dio_client.dart';
 import 'token_service.dart';
 
+/// Thrown by [ApiService.addPayment] when the backend responds HTTP 409 with
+/// { "warning": true }, indicating a possible duplicate payment.
+/// The caller should show a confirmation dialog and re-send with
+/// confirmDuplicate: true if the user chooses to proceed.
+class LabourPaymentDuplicateException implements Exception {
+  final String message;
+  const LabourPaymentDuplicateException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
+
   final TokenService _tokenService;
   late final Dio _dio;
 
@@ -419,15 +431,190 @@ class ApiService {
     }
   }
 
+  /// GET /attendance  (no date filter) → returns Set of "YYYY-MM-DD" strings
+  /// that have at least one non-absent attendance entry recorded.
+  /// Used for calendar cell shading.
+  ///
+  /// NOTE: intentionally does NOT use _parseList() because that method
+  /// short-circuits on the 'attendance' key and returns the inner entry list
+  /// instead of the outer date-record list.
+  Future<Set<String>> getAttendedDateStrings() async {
+    try {
+      final response = await _dio.get('/attendance');
+      final raw = response.data;
+
+      print('[AttendedDates] RAW response type: ${raw.runtimeType}');
+      print('[AttendedDates] RAW response: $raw');
+
+      // The backend can return either:
+      //   A) A List of date-records:  [ { date, attendance:[...] }, ... ]
+      //   B) A Map with a list:       { "attendance": [ { date, attendance:[...] }, ... ] }
+      //   C) A Map with a flat list:  { "attendance": [ { labourId, status, date, ... }, ... ] }
+      List<dynamic> records = [];
+
+      if (raw is List) {
+        records = raw;
+        print('[AttendedDates] Response is a direct List with ${records.length} items');
+      } else if (raw is Map) {
+        // Try the outer-list wrapper keys first
+        for (final key in ['records', 'data', 'attendance']) {
+          if (raw.containsKey(key) && raw[key] is List) {
+            records = raw[key] as List;
+            print('[AttendedDates] Extracted ${records.length} items from key "$key"');
+            break;
+          }
+        }
+        if (records.isEmpty) {
+          print('[AttendedDates] Unknown Map shape, keys: ${(raw as Map).keys.toList()}');
+        }
+      } else {
+        print('[AttendedDates] Unexpected response type: ${raw.runtimeType}');
+      }
+
+      final dates = <String>{};
+
+      for (int i = 0; i < records.length; i++) {
+        final item = records[i];
+        print('[AttendedDates] Item[$i] type=${item.runtimeType} keys=${item is Map ? (item as Map).keys.toList() : "N/A"}');
+
+        if (item is! Map) {
+          print('[AttendedDates]   → Skipped (not a Map)');
+          continue;
+        }
+
+        final m = Map<String, dynamic>.from(item as Map);
+
+        // Each record should look like { date: "...", attendance: [{...}] }
+        final dateRaw = m['date']?.toString() ?? '';
+        print('[AttendedDates]   → date field: "$dateRaw"');
+
+        if (dateRaw.isEmpty) {
+          print('[AttendedDates]   → Skipped (no date field)');
+          continue;
+        }
+
+        // Normalise ISO string → "YYYY-MM-DD"
+        final normalised = dateRaw.length >= 10 ? dateRaw.substring(0, 10) : dateRaw;
+        print('[AttendedDates]   → normalised date: "$normalised"');
+
+        // Check inner attendance array
+        final entriesRaw = m['attendance'];
+        print('[AttendedDates]   → attendance field type: ${entriesRaw?.runtimeType}');
+
+        if (entriesRaw is! List) {
+          // Flat record — treat the item itself as an entry
+          final status = (m['status'] ?? '').toString();
+          print('[AttendedDates]   → Flat record status: "$status"');
+          if (status == 'full_day' || status == 'half_day' || status == 'present') {
+            dates.add(normalised);
+            print('[AttendedDates]   → ✅ Added (flat record)');
+          }
+          continue;
+        }
+
+        final entries = entriesRaw;
+        print('[AttendedDates]   → attendance entries count: ${entries.length}');
+
+        for (final e in entries) {
+          if (e is Map) {
+            final status = (e['status'] ?? '').toString();
+            print('[AttendedDates]     entry status: "$status"');
+          }
+        }
+
+        final hasPresent = entries.any((e) {
+          if (e is! Map) return false;
+          final status = (e['status'] ?? '').toString();
+          return status == 'full_day' || status == 'half_day' || status == 'present';
+        });
+
+        if (hasPresent) {
+          dates.add(normalised);
+          print('[AttendedDates]   → ✅ Added "$normalised"');
+        } else {
+          print('[AttendedDates]   → ⚠️ Skipped (all entries absent)');
+        }
+      }
+
+      print('[AttendedDates] ✅ Final attended dates set (${dates.length}): $dates');
+      return dates;
+    } on DioException catch (e) {
+      print('[AttendedDates] ❌ DioException: $e');
+      return {};
+    } catch (e, st) {
+      print('[AttendedDates] ❌ Parse error: $e');
+      print('[AttendedDates] Stack: $st');
+      return {};
+    }
+  }
+
   // ── Labour Payment endpoints ──────────────────────────────────────────────
   // NOTE: /api/labour-payments is for labour salary payments.
   //       Do NOT use /api/payments (customer payments) for labour.
 
   /// POST /labour-payments
-  Future<bool> addPayment(PaymentModel payment) async {
+  /// Returns true on success.
+  /// Throws a [LabourPaymentDuplicateException] when the server responds with
+  /// HTTP 409 and { "warning": true } — caller must re-send with
+  /// confirmDuplicate: true to override.
+  Future<bool> addPayment(PaymentModel payment, {bool confirmDuplicate = false}) async {
     try {
       print('[ApiService] POST /labour-payments → ₹${payment.amount} for ${payment.name}');
-      await _dio.post('/labour-payments', data: payment.toJson());
+      final body = payment.toJson();
+      if (confirmDuplicate) body['confirmDuplicate'] = true;
+      await _dio.post('/labour-payments', data: body);
+      return true;
+    } on DioException catch (e) {
+      // 409 Conflict → duplicate warning from backend
+      if (e.response?.statusCode == 409) {
+        final data = e.response?.data;
+        if (data is Map && data['warning'] == true) {
+          throw LabourPaymentDuplicateException(
+            data['message']?.toString() ?? 'Possible duplicate payment detected.',
+          );
+        }
+      }
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PUT /labour-payments/:id  — edit an existing payment
+  Future<bool> updateLabourPayment(String id, {
+    required double amount,
+    required DateTime date,
+    String? note,
+  }) async {
+    try {
+      print('[ApiService] PUT /labour-payments/$id → ₹$amount');
+      await _dio.put('/labour-payments/$id', data: {
+        'amount': amount,
+        'date': '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+        if (note != null && note.isNotEmpty) 'note': note,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /labour-payments/:id  — soft-delete (void) a payment
+  Future<bool> voidLabourPayment(String id, {String? reason}) async {
+    try {
+      print('[ApiService] DELETE (void) /labour-payments/$id');
+      await _dio.delete('/labour-payments/$id', data: {
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// POST /labour-payments/:id/restore  — restore a voided payment
+  Future<bool> restoreLabourPayment(String id) async {
+    try {
+      print('[ApiService] POST /labour-payments/$id/restore');
+      await _dio.post('/labour-payments/$id/restore');
       return true;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -437,16 +624,25 @@ class ApiService {
   /// GET /labour-payments/:labourId
   Future<List<PaymentModel>> getPaymentHistory(String labourId) async {
     try {
-      print('[ApiService] GET /labour-payments/$labourId');
-      final response = await _dio.get('/labour-payments/$labourId');
+      print('[ApiService] GET /labour-payments/$labourId?includeDeleted=true');
+      final response = await _dio.get('/labour-payments/$labourId', queryParameters: {'includeDeleted': true});
       final data = _parseList(response.data);
-      return data
+      final paymentList = data
           .map((json) => PaymentModel.fromJson(json as Map<String, dynamic>))
           .toList();
+          
+      final activeCount = paymentList.where((p) => !p.isVoided).length;
+      final voidedCount = paymentList.where((p) => p.isVoided).length;
+      print('[ApiService] Total payments loaded: ${paymentList.length}');
+      print('[ApiService] Active count: $activeCount');
+      print('[ApiService] Voided count: $voidedCount');
+      
+      return paymentList;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
   }
+
 
   // ── Salary report endpoints ───────────────────────────────────────────────
   // Backend returns: { "report": [...], "totals": {...} }
@@ -501,12 +697,18 @@ class ApiService {
       // 2. Fetch Payment History (Optional)
       List<PaymentModel> paymentList = [];
       try {
-        final paymentsResponse = await _dio.get('/labour-payments');
+        final paymentsResponse = await _dio.get('/labour-payments', queryParameters: {'includeDeleted': true});
         final paymentsRaw = paymentsResponse.data;
         paymentList = _parseList(paymentsRaw)
             .map((p) => PaymentModel.fromJson(p as Map<String, dynamic>))
             .where((p) => p.labourId == labourId)
             .toList();
+            
+        final activeCount = paymentList.where((p) => !p.isVoided).length;
+        final voidedCount = paymentList.where((p) => p.isVoided).length;
+        print('[ApiService] Total payments loaded: ${paymentList.length}');
+        print('[ApiService] Active count: $activeCount');
+        print('[ApiService] Voided count: $voidedCount');
       } catch (e) {
         print("[ApiService] Ignoring payment history error: $e");
       }

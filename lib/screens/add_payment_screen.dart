@@ -81,7 +81,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     return '${_selectedDate.day} ${months[_selectedDate.month - 1]} ${_selectedDate.year}';
   }
 
-  Future<void> _handleSubmit() async {
+  Future<void> _handleSubmit({bool confirmDuplicate = false}) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
@@ -95,7 +95,7 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
         date: _selectedDate,
         note: _noteController.text.trim(),
       );
-      await apiService.addPayment(payment);
+      await apiService.addPayment(payment, confirmDuplicate: confirmDuplicate);
 
       // Re-fetch details to get updated earned / paid / balance
       double newBalance = 0;
@@ -114,13 +114,15 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Payment recorded successfully'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('\u2705 Payment recorded successfully'), backgroundColor: Colors.green),
         );
-        
-        // Trigger SMS flow with full salary breakdown
         await _sendPaymentSMS(totalEarned, totalPaid);
-        
         if (mounted) Navigator.pop(context, true);
+      }
+    } on LabourPaymentDuplicateException catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showDuplicateWarningDialog(e.message);
       }
     } catch (e) {
       if (mounted) {
@@ -129,6 +131,40 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Shows the ⚠️ Possible Duplicate Payment dialog.
+  /// If user taps "Save Anyway", re-sends with confirmDuplicate: true.
+  void _showDuplicateWarningDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 26),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Possible Duplicate Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 16))),
+        ]),
+        content: Text(message, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryGreen,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleSubmit(confirmDuplicate: true);
+            },
+            child: Text('Save Anyway', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
