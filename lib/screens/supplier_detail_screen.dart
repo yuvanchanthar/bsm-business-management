@@ -367,7 +367,7 @@ class _StatColumn extends StatelessWidget {
 
 // ── Purchases Tab ─────────────────────────────────────────────────────────────
 
-class _PurchasesTab extends StatelessWidget {
+class _PurchasesTab extends StatefulWidget {
   final SupplierLedgerModel ledger;
   final SupplierService service;
   final VoidCallback onAdd;
@@ -381,11 +381,77 @@ class _PurchasesTab extends StatelessWidget {
   });
 
   @override
+  State<_PurchasesTab> createState() => _PurchasesTabState();
+}
+
+class _PurchasesTabState extends State<_PurchasesTab> {
+  String _filter = 'All';
+
+  Widget _buildFilterChip(String label) {
+    final isSelected = _filter == label;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = label),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.purple : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final purchases = ledger.purchases;
+    final allPurchases = widget.ledger.purchases;
+    final purchases = allPurchases.where((p) {
+      if (_filter == 'Active') return !p.isVoided;
+      if (_filter == 'Voided') return p.isVoided;
+      return true;
+    }).toList();
+
+    final activeCount = allPurchases.where((p) => !p.isVoided).length;
+    final voidedCount = allPurchases.where((p) => p.isVoided).length;
+
     return Stack(
       children: [
-        purchases.isEmpty
+        Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Active: $activeCount', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
+                      Text('Voided: $voidedCount', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _buildFilterChip('All'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Active'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Voided'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: purchases.isEmpty
             ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -400,7 +466,7 @@ class _PurchasesTab extends StatelessWidget {
                 ),
               )
             : RefreshIndicator(
-                onRefresh: () async => onRefresh(),
+                onRefresh: () async => widget.onRefresh(),
                 color: Colors.purple,
                 child: ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -408,18 +474,21 @@ class _PurchasesTab extends StatelessWidget {
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, i) => _PurchaseCard(
                     purchase: purchases[i],
-                    service: service,
-                    supplierId: ledger.supplier.id ?? '',
-                    onRefresh: onRefresh,
+                    service: widget.service,
+                    supplierId: widget.ledger.supplier.id ?? '',
+                    onRefresh: widget.onRefresh,
                   ),
                 ),
               ),
+            ),
+          ],
+        ),
         Positioned(
           right: 20,
           bottom: 24,
           child: FloatingActionButton.extended(
             heroTag: 'add_purchase_fab',
-            onPressed: onAdd,
+            onPressed: widget.onAdd,
             backgroundColor: Colors.purple,
             icon: const Icon(Icons.add, color: Colors.white),
             label: Text('Add Purchase',
@@ -448,86 +517,134 @@ class _PurchaseCard extends StatefulWidget {
 }
 
 class _PurchaseCardState extends State<_PurchaseCard> {
-  bool _deleting = false;
+  bool _isLoading = false;
 
-  Future<void> _confirmDelete() async {
+  Future<void> _confirmVoid() async {
     final id = widget.purchase.id;
     if (id == null) return;
+    
+    final reasonCtrl = TextEditingController();
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Delete Purchase',
-            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-        content: Text(
-            'Delete "${widget.purchase.item}" purchase of ₹${widget.purchase.totalAmount.toStringAsFixed(0)}?\n\nThis will reverse the inventory stock.',
-            style: GoogleFonts.inter()),
+        title: Text('Void Purchase', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to void this "${widget.purchase.item}" purchase of ₹${widget.purchase.totalAmount.toStringAsFixed(0)}?\n\nThis will reverse the inventory stock.',
+                style: GoogleFonts.inter()),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonCtrl,
+              decoration: InputDecoration(
+                hintText: 'Reason for voiding (optional)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancel',
-                  style: GoogleFonts.inter(color: AppColors.textSecondary))),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: GoogleFonts.inter()),
+            child: Text('Void', style: GoogleFonts.inter()),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    setState(() => _deleting = true);
+    setState(() => _isLoading = true);
     try {
-      await widget.service.deletePurchase(id);
+      await widget.service.voidPurchase(id, reason: reasonCtrl.text.trim());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Purchase deleted'),
-              backgroundColor: Colors.orange),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Purchase voided'), backgroundColor: Colors.orange));
         widget.onRefresh();
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _deleting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Delete failed: ${e.toString().replaceAll('Exception: ', '')}'),
-              backgroundColor: Colors.red),
-        );
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
       }
     }
+  }
+
+  void _showAuditDetailDialog() {
+    final p = widget.purchase;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Icon(Icons.info_outline, color: Colors.purple),
+          const SizedBox(width: 10),
+          Text('Purchase Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAuditRow('Item', p.item),
+            _buildAuditRow('Amount', '₹${p.totalAmount.toStringAsFixed(0)}'),
+            _buildAuditRow('Date', DateFormat('dd MMM yyyy').format(p.date)),
+            if (p.createdAt != null) _buildAuditRow('Created At', DateFormat('dd MMM yyyy hh:mm a').format(p.createdAt!)),
+            if (p.voidedAt != null) _buildAuditRow('Voided At', DateFormat('dd MMM yyyy hh:mm a').format(p.voidedAt!)),
+            _buildAuditRow('Delete Reason', p.voidedReason?.isNotEmpty == true ? p.voidedReason! : 'N/A'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.purple)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 100, child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
+          Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.purchase;
-    return Stack(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3)),
-            ],
-          ),
-          child: Row(
+    final isVoided = p.isVoided;
+
+    final cardContent = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isVoided ? Colors.grey.shade100 : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: isVoided ? Border.all(color: Colors.grey.shade300) : null,
+        boxShadow: isVoided ? null : [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.purple.withValues(alpha: 0.1),
+                  color: isVoided ? Colors.red.withValues(alpha: 0.1) : Colors.purple.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.shopping_bag_outlined,
-                    color: Colors.purple, size: 22),
+                child: Icon(isVoided ? Icons.block : Icons.shopping_bag_outlined, color: isVoided ? Colors.red : Colors.purple, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -535,45 +652,30 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(p.item,
-                        style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary)),
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     const SizedBox(height: 4),
                     Wrap(spacing: 6, runSpacing: 4, children: [
-                      _Badge(
-                        '${p.quantity.toStringAsFixed(p.quantity % 1 == 0 ? 0 : 1)} ${p.unit}',
-                        Colors.blueGrey,
-                      ),
-                      _Badge(
-                          '₹${p.pricePerUnit.toStringAsFixed(0)}/unit',
-                          Colors.orange),
-                      if (p.category != null && p.category!.isNotEmpty)
-                        _Badge(p.category!, Colors.purple),
+                      _Badge('${p.quantity.toStringAsFixed(p.quantity % 1 == 0 ? 0 : 1)} ${p.unit}', Colors.blueGrey),
+                      _Badge('₹${p.pricePerUnit.toStringAsFixed(0)}/unit', Colors.orange),
+                      if (p.category != null && p.category!.isNotEmpty) _Badge(p.category!, Colors.purple),
                     ]),
                     if (p.note.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(p.note,
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.textSecondary),
+                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                     ],
                     const SizedBox(height: 4),
                     Text(
                       DateFormat('dd MMM yyyy').format(p.date),
-                      style: GoogleFonts.inter(
-                          fontSize: 11, color: AppColors.textHint),
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
                     ),
                     if (p.dueDate != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         'Due: ${DateFormat('dd MMM yyyy').format(p.dueDate!)}',
-                        style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.bold),
+                        style: GoogleFonts.inter(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ],
@@ -584,61 +686,48 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                 children: [
                   Text(
                     '₹${p.totalAmount.toStringAsFixed(0)}',
-                    style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple),
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: isVoided ? AppColors.textSecondary : Colors.purple, decoration: isVoided ? TextDecoration.lineThrough : null),
                   ),
                   const SizedBox(height: 4),
-                  // Edit button
-                  if (p.id != null)
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  EditSupplierPurchaseScreen(
-                                    purchase: p,
-                                    supplierId: widget.supplierId,
-                                  ),
-                            ),
-                          );
-                          if (result == true) widget.onRefresh();
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(8),
+                  if (isVoided)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
+                      child: Text('\u26d4 VOIDED', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                    )
+                  else if (p.id != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => EditSupplierPurchaseScreen(purchase: p, supplierId: widget.supplierId),
+                              ),
+                            );
+                            if (result == true) widget.onRefresh();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
+                            child: const Icon(Icons.edit_outlined, size: 16, color: Colors.purple),
                           ),
-                          child: const Icon(Icons.edit_outlined,
-                              size: 16, color: Colors.purple),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: _deleting ? null : _confirmDelete,
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(8),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: _isLoading ? null : _confirmVoid,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
+                            child: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
                           ),
-                          child: _deleting
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.red))
-                              : const Icon(Icons.delete_outline,
-                                  size: 16, color: Colors.red),
                         ),
-                      ),
-                    ]),
+                      ],
+                    ),
                   if (p.invoiceImage != null && p.invoiceImage!.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     GestureDetector(
@@ -648,9 +737,7 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                           backgroundColor: Colors.transparent,
                           insetPadding: const EdgeInsets.all(16),
                           child: Container(
-                            decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16)),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
                             clipBehavior: Clip.antiAlias,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -658,37 +745,17 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                                 AppBar(
                                   backgroundColor: Colors.white,
                                   elevation: 0,
-                                  title: Text('Invoice - ${p.item}',
-                                      style: GoogleFonts.inter(
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.textPrimary)),
-                                  leading: IconButton(
-                                      icon: const Icon(Icons.close,
-                                          color: AppColors.textPrimary),
-                                      onPressed: () =>
-                                          Navigator.pop(context)),
+                                  title: Text('Invoice - ${p.item}', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                                  leading: IconButton(icon: const Icon(Icons.close, color: AppColors.textPrimary), onPressed: () => Navigator.pop(context)),
                                 ),
                                 Container(
-                                  constraints: BoxConstraints(
-                                      maxHeight:
-                                          MediaQuery.of(context).size.height *
-                                              0.6),
+                                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
                                   child: InteractiveViewer(
                                     minScale: 0.5,
                                     maxScale: 4.0,
                                     child: p.invoiceImage!.startsWith('data:')
-                                        ? Image.memory(
-                                            base64Decode(
-                                                p.invoiceImage!.split(',')[1]),
-                                            fit: BoxFit.contain)
-                                        : Image.network(p.invoiceImage!,
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Padding(
-                                                  padding: EdgeInsets.all(24),
-                                                  child: Text(
-                                                      'Failed to load image'),
-                                                )),
+                                        ? Image.memory(base64Decode(p.invoiceImage!.split(',')[1]), fit: BoxFit.contain)
+                                        : Image.network(p.invoiceImage!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Padding(padding: EdgeInsets.all(24), child: Text('Failed to load image'))),
                                   ),
                                 ),
                                 const SizedBox(height: 16),
@@ -698,21 +765,12 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                         ),
                       ),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.receipt_long_outlined,
-                              size: 14, color: Colors.purple),
+                          const Icon(Icons.receipt_long_outlined, size: 14, color: Colors.purple),
                           const SizedBox(width: 4),
-                          Text('VIEW BILL',
-                              style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.purple)),
+                          Text('VIEW BILL', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.purple)),
                         ]),
                       ),
                     ),
@@ -721,17 +779,29 @@ class _PurchaseCardState extends State<_PurchaseCard> {
               ),
             ],
           ),
-        ),
-        if (_deleting)
+          if (isVoided) ...[
+            const SizedBox(height: 12),
+            if (p.voidedAt != null) ...[
+              Text('Voided At:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+              Text(DateFormat('dd MMM yyyy hh:mm a').format(p.voidedAt!), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+            ],
+            Text('Reason:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+            Text(p.voidedReason?.isNotEmpty == true ? p.voidedReason! : 'No reason provided',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary, fontStyle: FontStyle.italic)),
+          ],
+        ],
+      ),
+    );
+
+    return Stack(
+      children: [
+        if (isVoided) GestureDetector(onTap: _showAuditDetailDialog, child: Opacity(opacity: 0.7, child: cardContent)) else cardContent,
+        if (_isLoading)
           Positioned.fill(
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.purple),
-              ),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(16)),
+              child: const Center(child: CircularProgressIndicator(color: Colors.purple)),
             ),
           ),
       ],
@@ -743,7 +813,7 @@ class _PurchaseCardState extends State<_PurchaseCard> {
 
 // ── Payments Tab ──────────────────────────────────────────────────────────────
 
-class _PaymentsTab extends StatelessWidget {
+class _PaymentsTab extends StatefulWidget {
   final SupplierLedgerModel ledger;
   final SupplierService service;
   final VoidCallback onAdd;
@@ -757,15 +827,78 @@ class _PaymentsTab extends StatelessWidget {
   });
 
   @override
+  State<_PaymentsTab> createState() => _PaymentsTabState();
+}
+
+class _PaymentsTabState extends State<_PaymentsTab> {
+  String _filter = 'All';
+
+  Widget _buildFilterChip(String label) {
+    final isSelected = _filter == label;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = label),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.purple : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final payments = ledger.payments;
-    final pending = ledger.pendingBalance;
+    final allPayments = widget.ledger.payments;
+    final payments = allPayments.where((p) {
+      if (_filter == 'Active') return !p.isVoided;
+      if (_filter == 'Voided') return p.isVoided;
+      return true;
+    }).toList();
+
+    final activeCount = allPayments.where((p) => !p.isVoided).length;
+    final voidedCount = allPayments.where((p) => p.isVoided).length;
+
+    final pending = widget.ledger.pendingBalance;
     final isOverpaid = pending < 0;
 
     return Stack(
       children: [
         Column(
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Active: $activeCount', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.purple)),
+                      Text('Voided: $voidedCount', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _buildFilterChip('All'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Active'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Voided'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             // Pending balance banner
             if (pending != 0)
               Container(
@@ -816,7 +949,7 @@ class _PaymentsTab extends StatelessWidget {
                       ),
                     )
                   : RefreshIndicator(
-                      onRefresh: () async => onRefresh(),
+                      onRefresh: () async => widget.onRefresh(),
                       color: Colors.purple,
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -824,8 +957,8 @@ class _PaymentsTab extends StatelessWidget {
                         separatorBuilder: (_, _s) => const SizedBox(height: 12),
                         itemBuilder: (context, i) => _PaymentCard(
                           payment: payments[i],
-                          service: service,
-                          onRefresh: onRefresh,
+                          service: widget.service,
+                          onRefresh: widget.onRefresh,
                         ),
                       ),
                     ),
@@ -837,7 +970,7 @@ class _PaymentsTab extends StatelessWidget {
           bottom: 24,
           child: FloatingActionButton.extended(
             heroTag: 'add_payment_fab',
-            onPressed: isOverpaid ? null : onAdd,
+            onPressed: isOverpaid ? null : widget.onAdd,
             backgroundColor: isOverpaid ? Colors.grey : Colors.purple,
             icon: const Icon(Icons.add, color: Colors.white),
             label: Text(
@@ -866,81 +999,132 @@ class _PaymentCard extends StatefulWidget {
 }
 
 class _PaymentCardState extends State<_PaymentCard> {
-  bool _deleting = false;
+  bool _isLoading = false;
 
-  Future<void> _confirmDelete() async {
+  Future<void> _confirmVoid() async {
     final id = widget.payment.id;
     if (id == null) return;
+    
+    final reasonCtrl = TextEditingController();
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Delete Payment',
-            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-        content: Text(
-            'Delete payment of ₹${widget.payment.amount.toStringAsFixed(0)}?',
-            style: GoogleFonts.inter()),
+        title: Text('Void Payment', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to void this payment of ₹${widget.payment.amount.toStringAsFixed(0)}?',
+                style: GoogleFonts.inter()),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonCtrl,
+              decoration: InputDecoration(
+                hintText: 'Reason for voiding (optional)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: Text('Cancel',
-                  style: GoogleFonts.inter(color: AppColors.textSecondary))),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: GoogleFonts.inter()),
+            child: Text('Void', style: GoogleFonts.inter()),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    setState(() => _deleting = true);
+    setState(() => _isLoading = true);
     try {
-      await widget.service.deletePayment(id);
+      await widget.service.voidPayment(id, reason: reasonCtrl.text.trim());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Payment deleted'),
-              backgroundColor: Colors.orange),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment voided'), backgroundColor: Colors.orange));
         widget.onRefresh();
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _deleting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Delete failed: ${e.toString().replaceAll('Exception: ', '')}'),
-              backgroundColor: Colors.red),
-        );
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
       }
     }
+  }
+
+  void _showAuditDetailDialog() {
+    final p = widget.payment;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Icon(Icons.info_outline, color: Colors.purple),
+          const SizedBox(width: 10),
+          Text('Payment Details', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAuditRow('Amount', '₹${p.amount.toStringAsFixed(0)}'),
+            _buildAuditRow('Date', DateFormat('dd MMM yyyy').format(p.date)),
+            if (p.createdAt != null) _buildAuditRow('Created At', DateFormat('dd MMM yyyy hh:mm a').format(p.createdAt!)),
+            if (p.voidedAt != null) _buildAuditRow('Voided At', DateFormat('dd MMM yyyy hh:mm a').format(p.voidedAt!)),
+            _buildAuditRow('Delete Reason', p.voidedReason?.isNotEmpty == true ? p.voidedReason! : 'N/A'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.purple)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 100, child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
+          Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.payment;
-    return Stack(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3)),
-            ],
-          ),
-          child: Row(
+    final isVoided = p.isVoided;
+
+    final cardContent = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isVoided ? Colors.grey.shade100 : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: isVoided ? Border.all(color: Colors.grey.shade300) : null,
+        boxShadow: isVoided ? null : [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: isVoided ? Colors.red.withValues(alpha: 0.1) : Colors.green.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.payments_outlined, color: Colors.green, size: 22),
+                child: Icon(isVoided ? Icons.block : Icons.payments_outlined, color: isVoided ? Colors.red : Colors.green, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -968,10 +1152,16 @@ class _PaymentCardState extends State<_PaymentCard> {
                 children: [
                   Text(
                     '₹${p.amount.toStringAsFixed(0)}',
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: isVoided ? AppColors.textSecondary : Colors.green, decoration: isVoided ? TextDecoration.lineThrough : null),
                   ),
                   const SizedBox(height: 8),
-                  if (p.id != null)
+                  if (isVoided)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
+                      child: Text('\u26d4 VOIDED', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                    )
+                  else if (p.id != null)
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -983,23 +1173,17 @@ class _PaymentCardState extends State<_PaymentCard> {
                           },
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
                             child: const Icon(Icons.edit_outlined, size: 16, color: Colors.green),
                           ),
                         ),
                         const SizedBox(width: 6),
                         InkWell(
                           borderRadius: BorderRadius.circular(8),
-                          onTap: _deleting ? null : _confirmDelete,
+                          onTap: _isLoading ? null : _confirmVoid,
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
                             child: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
                           ),
                         ),
@@ -1009,17 +1193,29 @@ class _PaymentCardState extends State<_PaymentCard> {
               ),
             ],
           ),
-        ),
-        if (_deleting)
+          if (isVoided) ...[
+            const SizedBox(height: 12),
+            if (p.voidedAt != null) ...[
+              Text('Voided At:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+              Text(DateFormat('dd MMM yyyy hh:mm a').format(p.voidedAt!), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+            ],
+            Text('Reason:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+            Text(p.voidedReason?.isNotEmpty == true ? p.voidedReason! : 'No reason provided',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary, fontStyle: FontStyle.italic)),
+          ],
+        ],
+      ),
+    );
+
+    return Stack(
+      children: [
+        if (isVoided) GestureDetector(onTap: _showAuditDetailDialog, child: Opacity(opacity: 0.7, child: cardContent)) else cardContent,
+        if (_isLoading)
           Positioned.fill(
             child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.purple),
-              ),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(16)),
+              child: const Center(child: CircularProgressIndicator(color: Colors.purple)),
             ),
           ),
       ],

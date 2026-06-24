@@ -88,7 +88,9 @@ class SupplierService {
   /// GET /suppliers/:id/ledger
   Future<SupplierLedgerModel> getSupplierLedger(String supplierId) async {
     try {
-      final response = await _dio.get('/suppliers/$supplierId/ledger');
+      final response = await _dio.get('/suppliers/$supplierId/ledger', queryParameters: {
+        'includeDeleted': true,
+      });
       final data = response.data as Map<String, dynamic>;
       return SupplierLedgerModel.fromJson(data);
     } on DioException catch (e) {
@@ -128,6 +130,18 @@ class SupplierService {
     }
   }
 
+  /// DELETE /supplier-purchases/:id (soft-delete / void)
+  Future<bool> voidPurchase(String id, {String? reason}) async {
+    try {
+      await _dio.delete('/supplier-purchases/$id', data: {
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
   // ── Payment ───────────────────────────────────────────────────────────────────
 
   /// POST /supplier-payments
@@ -154,6 +168,18 @@ class SupplierService {
   Future<bool> deletePayment(String id) async {
     try {
       await _dio.delete('/supplier-payments/$id');
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /supplier-payments/:id (soft-delete / void)
+  Future<bool> voidPayment(String id, {String? reason}) async {
+    try {
+      await _dio.delete('/supplier-payments/$id', data: {
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
       return true;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -218,7 +244,9 @@ class SupplierService {
   /// endpoint only returns summarized transaction entries.
   Future<List<SupplierPurchaseModel>> getSupplierPurchasesRaw(String supplierId) async {
     try {
-      final response = await _dio.get('/suppliers/$supplierId/pdf-report');
+      final response = await _dio.get('/suppliers/$supplierId/pdf-report', queryParameters: {
+        'includeDeleted': true,
+      });
       final data = response.data as Map<String, dynamic>;
       final rawList = data['purchaseHistory'] as List<dynamic>? ?? [];
       print('[SupplierService] getSupplierPurchasesRaw: ${rawList.length} purchases fetched');

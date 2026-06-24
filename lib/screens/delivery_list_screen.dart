@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 import '../core/app_colors.dart';
 import '../models/delivery.dart';
 import '../services/api_service.dart';
@@ -256,6 +257,9 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
           SnackBar(content: Text('Delivery marked as $newStatus!')),
         );
         _fetchDeliveries();
+        if (newStatus == 'completed') {
+          _triggerDeliveryCompletedSMS(delivery);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -267,6 +271,45 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
           ),
         );
       }
+    }
+  }
+
+  void _triggerDeliveryCompletedSMS(Delivery delivery) async {
+    final customerPhone = delivery.customerPhone;
+    if (customerPhone == null || customerPhone.isEmpty) return;
+
+    final StringBuffer productsBuffer = StringBuffer();
+    for (var p in delivery.products) {
+      productsBuffer.writeln('${p.name} - ${p.quantity} ${p.unit}');
+    }
+
+    final String message = '''
+BSM Agro Industry
+
+Dear ${delivery.customerName},
+
+Your delivery has been completed successfully.
+
+Delivered Products:
+
+${productsBuffer.toString().trim()}
+
+Delivered Amount: ₹${NumberFormat('#,##,###').format(delivery.deliveryTotal)}
+
+Current Balance: ₹${NumberFormat('#,##,###').format(delivery.updatedBalance)}
+
+Thank you for choosing BSM Agro Industry.''';
+
+    final cleanPhone = customerPhone.replaceAll(RegExp(r'\\D'), '');
+    final encodedMessage = Uri.encodeComponent(message);
+
+final Uri url = Uri.parse(
+  'sms:$cleanPhone?body=$encodedMessage'
+);
+    //final Uri url = Uri.parse('sms:$cleanPhone?body=\${Uri.encodeComponent(message)}');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
     }
   }
 

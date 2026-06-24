@@ -1,1 +1,0 @@
-﻿import 'package:flutter/material.dart'; void main() { showDatePicker(context: null as dynamic, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now(), selectableDayPredicate: (d) => true, dayBuilder: (context, date) => Container()); }

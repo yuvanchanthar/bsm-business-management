@@ -12,6 +12,8 @@ import '../services/token_service.dart';
 import '../features/invoice/presentation/providers/template_provider.dart';
 import '../features/invoice/presentation/screens/template_selection_screen.dart';
 import 'delivery_success_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 class AddDeliveryScreen extends StatefulWidget {
   const AddDeliveryScreen({super.key});
@@ -276,6 +278,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           );
           // Refresh inventory so stock quantities reflect what was deducted.
           _fetchInventory();
+          _triggerDeliveryCreatedSMS(fullDelivery ?? createdDelivery);
         }
       } else {
         if (mounted) {
@@ -292,6 +295,47 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _triggerDeliveryCreatedSMS(Delivery delivery) async {
+    final customerPhone = delivery.customerPhone;
+    if (customerPhone == null || customerPhone.isEmpty) return;
+
+    final StringBuffer productsBuffer = StringBuffer();
+    for (var p in delivery.products) {
+      productsBuffer.writeln('${p.name} - ${p.quantity} ${p.unit}');
+    }
+
+    final String message = '''
+BSM Agro Industry
+
+Dear ${delivery.customerName},
+
+Your delivery order has been created successfully.
+
+Ordered Products:
+
+${productsBuffer.toString().trim()}
+
+Order Amount: ₹${NumberFormat('#,##,###').format(delivery.deliveryTotal)}
+
+Previous Balance: ₹${NumberFormat('#,##,###').format(delivery.previousBalance)}
+Current Balance: ₹${NumberFormat('#,##,###').format(delivery.updatedBalance)}
+
+Thank you,
+BSM Agro Industry''';
+
+    final cleanPhone = customerPhone.replaceAll(RegExp(r'\\D'), '');
+    final encodedMessage = Uri.encodeComponent(message);
+
+    final Uri url = Uri.parse(
+  'sms:$cleanPhone?body=$encodedMessage'
+);
+    //final Uri url = Uri.parse('sms:$cleanPhone?body=\${Uri.encodeComponent(message)}');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
     }
   }
 

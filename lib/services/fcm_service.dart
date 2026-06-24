@@ -300,12 +300,13 @@ class FcmService {
         receiveTimeout: const Duration(seconds: 10),
       ));
       await dio.post('/auth/fcm-token', data: {'fcmToken': fcmToken});
+      debugPrint('[FCM] JWT Found: ${authToken != null}');
+debugPrint('[FCM] Sending token to backend');
       debugPrint('[FCM] Token saved to backend ✓');
     } catch (e) {
       debugPrint('[FCM] POST /auth/fcm-token error: $e');
     }
-    debugPrint('[FCM] JWT Found: ${authToken != null}');
-debugPrint('[FCM] Sending token to backend');
+    
   }
 
   Future<void> _deleteTokenFromBackend() async {

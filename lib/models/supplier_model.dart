@@ -87,6 +87,11 @@ class SupplierPurchaseModel {
   final DateTime? dueDate;
   final String? invoiceImage;
   final DateTime? createdAt;
+  
+  // ── Void / restore support ──────────────────────────────────────────────
+  final bool isVoided;
+  final String? voidedReason;
+  final DateTime? voidedAt;
 
   SupplierPurchaseModel({
     this.id,
@@ -102,6 +107,9 @@ class SupplierPurchaseModel {
     this.dueDate,
     this.invoiceImage,
     this.createdAt,
+    this.isVoided = false,
+    this.voidedReason,
+    this.voidedAt,
   });
 
   factory SupplierPurchaseModel.fromJson(Map<String, dynamic> json) {
@@ -122,6 +130,11 @@ class SupplierPurchaseModel {
       invoiceImage: json['invoiceImage']?.toString(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+      isVoided: json['isVoided'] == true || json['isDeleted'] == true,
+      voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
+      voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
           : null,
     );
   }
@@ -153,6 +166,11 @@ class SupplierPaymentModel {
   final String note;
   final DateTime date;
   final DateTime? createdAt;
+  
+  // ── Void / restore support ──────────────────────────────────────────────
+  final bool isVoided;
+  final String? voidedReason;
+  final DateTime? voidedAt;
 
   SupplierPaymentModel({
     this.id,
@@ -161,6 +179,9 @@ class SupplierPaymentModel {
     this.note = '',
     required this.date,
     this.createdAt,
+    this.isVoided = false,
+    this.voidedReason,
+    this.voidedAt,
   });
 
   factory SupplierPaymentModel.fromJson(Map<String, dynamic> json) {
@@ -174,6 +195,11 @@ class SupplierPaymentModel {
           : DateTime.now(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+      isVoided: json['isVoided'] == true || json['isDeleted'] == true,
+      voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
+      voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
           : null,
     );
   }
@@ -211,54 +237,58 @@ class SupplierLedgerModel {
   });
 
   factory SupplierLedgerModel.fromJson(Map<String, dynamic> json) {
-    final supplierJson = json['supplier'] as Map<String, dynamic>? ?? json;
-    
-    final List<dynamic> transactionsJson = json['transactions'] as List<dynamic>? ?? [];
-    
-    final List<dynamic> purchasesJson = json['purchaseHistory'] as List<dynamic>? ??
-        json['purchases'] as List<dynamic>? ??
-        transactionsJson.where((t) => t['type'] == 'purchase').toList();
-        
-    final List<dynamic> paymentsJson = json['paymentHistory'] as List<dynamic>? ??
-        json['payments'] as List<dynamic>? ??
-        transactionsJson.where((t) => t['type'] == 'payment').toList();
+  final supplierJson = json['supplier'] as Map<String, dynamic>? ?? json;
+  
+  final List<dynamic> transactionsJson = json['transactions'] as List<dynamic>? ?? [];
+  
+  final List<dynamic> purchasesJson = json['purchaseHistory'] as List<dynamic>? ??
+      json['purchases'] as List<dynamic>? ??
+      transactionsJson.where((t) => t['type'] == 'purchase').toList();
+      
+  final List<dynamic> paymentsJson = json['paymentHistory'] as List<dynamic>? ??
+      json['payments'] as List<dynamic>? ??
+      transactionsJson.where((t) => t['type'] == 'payment').toList();
 
-    final purchases = purchasesJson
-        .map((p) => SupplierPurchaseModel.fromJson(p as Map<String, dynamic>))
-        .toList();
-    final payments = paymentsJson
-        .map((p) => SupplierPaymentModel.fromJson(p as Map<String, dynamic>))
-        .toList();
+  final purchases = purchasesJson
+      .map((p) => SupplierPurchaseModel.fromJson(p as Map<String, dynamic>))
+      .toList();
+  final payments = paymentsJson
+      .map((p) => SupplierPaymentModel.fromJson(p as Map<String, dynamic>))
+      .toList();
 
-    final totalPurchased = _safeNum(json, ['totalPurchased', 'totalPurchase']) > 0
-        ? _safeNum(json, ['totalPurchased', 'totalPurchase'])
-        : purchases.fold(0.0, (s, p) => s + p.totalAmount);
+  // ✅ Use API value if the key exists at all; only fall back when truly absent.
+  bool _hasKey(Map<String, dynamic> j, List<String> keys) =>
+      keys.any((k) => j.containsKey(k) && j[k] != null);
 
-    final totalPaid = _safeNum(json, ['totalPaid', 'paid']) > 0
-        ? _safeNum(json, ['totalPaid', 'paid'])
-        : payments.fold(0.0, (s, p) => s + p.amount);
+  final totalPurchased = _hasKey(json, ['totalPurchased', 'totalPurchase'])
+      ? _safeNum(json, ['totalPurchased', 'totalPurchase'])
+      : purchases.where((p) => !p.isVoided).fold(0.0, (s, p) => s + p.totalAmount);
 
-    final openingBalance = _safeNum(json, ['openingBalance', 'opBal']) > 0
-        ? _safeNum(json, ['openingBalance', 'opBal'])
-        : _safeNum(supplierJson, ['openingBalance', 'opBal', 'opening_balance']);
+  final totalPaid = _hasKey(json, ['totalPaid', 'paid'])
+      ? _safeNum(json, ['totalPaid', 'paid'])
+      : payments.where((p) => !p.isVoided).fold(0.0, (s, p) => s + p.amount);
 
-    final pendingBalance = _safeNum(json, ['pendingBalance', 'balance', 'pending']) > 0
-        ? _safeNum(json, ['pendingBalance', 'balance', 'pending'])
-        : _safeNum(supplierJson, ['pendingBalance', 'balance', 'pending']);
+  final openingBalance = _hasKey(json, ['openingBalance', 'opBal'])
+      ? _safeNum(json, ['openingBalance', 'opBal'])
+      : _safeNum(supplierJson, ['openingBalance', 'opBal', 'opening_balance']);
 
-    final advanceBalance = _safeNum(json, ['advanceBalance', 'advance']) > 0
-        ? _safeNum(json, ['advanceBalance', 'advance'])
-        : _safeNum(supplierJson, ['advanceBalance', 'advance']);
+  final pendingBalance = _hasKey(json, ['pendingBalance', 'balance', 'pending'])
+      ? _safeNum(json, ['pendingBalance', 'balance', 'pending'])
+      : _safeNum(supplierJson, ['pendingBalance', 'balance', 'pending']);
 
-    return SupplierLedgerModel(
-      supplier: SupplierModel.fromJson(supplierJson),
-      purchases: purchases,
-      payments: payments,
-      totalPurchased: totalPurchased,
-      totalPaid: totalPaid,
-      openingBalance: openingBalance,
-      pendingBalance: pendingBalance,
-      advanceBalance: advanceBalance,
-    );
-  }
+  final advanceBalance = _hasKey(json, ['advanceBalance', 'advance'])
+      ? _safeNum(json, ['advanceBalance', 'advance'])
+      : _safeNum(supplierJson, ['advanceBalance', 'advance']);
+
+  return SupplierLedgerModel(
+    supplier: SupplierModel.fromJson(supplierJson),
+    purchases: purchases,
+    payments: payments,
+    totalPurchased: totalPurchased,
+    totalPaid: totalPaid,
+    openingBalance: openingBalance,
+    pendingBalance: pendingBalance,
+    advanceBalance: advanceBalance,
+  );
+}
 }

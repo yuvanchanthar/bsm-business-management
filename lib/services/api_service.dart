@@ -12,6 +12,7 @@ import '../models/invoice_model.dart';
 import '../models/dashboard_stats_model.dart';
 import '../models/labour_report_model.dart';
 import '../models/monthly_report_model.dart';
+import '../models/customer_statement_model.dart';
 import 'dio_client.dart';
 import 'token_service.dart';
 
@@ -282,6 +283,27 @@ class ApiService {
     }
   }
 
+  /// GET /customers/:id/statement
+  Future<CustomerStatementModel> getCustomerStatement(
+    String id, {
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final Map<String, dynamic> queryParams = {};
+      if (startDate != null) {
+        queryParams['startDate'] = startDate.toIso8601String();
+      }
+      if (endDate != null) {
+        queryParams['endDate'] = endDate.toIso8601String();
+      }
+      final response = await _dio.get('/customers/$id/statement', queryParameters: queryParams);
+      return CustomerStatementModel.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
   /// Force-sync the customer's master balance with the dynamically computed ledger.
   /// Prevents double increments and ensures UI consistency.
   Future<void> syncCustomerBalance(String customerId) async {
@@ -305,6 +327,52 @@ class ApiService {
   Future<void> addCustomerPayment(PaymentModel payment) async {
     try {
       await _dio.post('/customer-payments', data: payment.toJson());
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PUT /customer-payments/:id
+  Future<bool> updateCustomerPayment(String id, {
+    required double amount,
+    required DateTime date,
+    String? note,
+  }) async {
+    try {
+      await _dio.put('/customer-payments/$id', data: {
+        'amount': amount,
+        'date': '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+        if (note != null && note.isNotEmpty) 'note': note,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /customer-payments/:id
+  Future<bool> voidCustomerPayment(String id, {String? reason}) async {
+    try {
+      await _dio.delete('/customer-payments/$id', data: {
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// GET /customer-payments?customerId=:id
+  Future<List<PaymentModel>> getCustomerPayments(String customerId) async {
+    try {
+      final response = await _dio.get('/customer-payments', queryParameters: {
+        'customerId': customerId,
+        'includeDeleted': true,
+      });
+      final data = _parseList(response.data);
+      return data
+          .map((json) => PaymentModel.fromJson(json as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }

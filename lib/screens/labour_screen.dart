@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../models/labour_model.dart';
+import '../models/attendance_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import '../widgets/labour_card.dart';
@@ -46,16 +47,14 @@ class _LabourScreenState extends State<LabourScreen> {
       final labours = await _apiService.getLabours();
       if (mounted) {
         setState(() {
-          // Ensure no duplicate labours exist by checking IDs
           final uniqueLabours = <String, LabourModel>{};
           for (var l in labours) {
             uniqueLabours[l.id ?? l.name] = l;
           }
-          
           _allLabours = uniqueLabours.values.toList();
           _isLoading = false;
         });
-        _onSearchChanged(); // This reliably sets _filteredLabours
+        _onSearchChanged();
       }
     } catch (e) {
       if (mounted) {
@@ -100,6 +99,171 @@ class _LabourScreenState extends State<LabourScreen> {
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
+  }
+
+  // ── Mark Attendance bottom sheet ──────────────────────────────────────────
+
+  Future<void> _showMarkAttendanceSheet(LabourModel labour) async {
+    final today = DateTime.now();
+    String? selectedStatus;
+
+    // Pre-load today's existing attendance for this labour (if any)
+    try {
+      final records = await _apiService.getAttendanceRecords(today);
+      final existing = records.where((r) => r.labourId == labour.id).firstOrNull;
+      if (existing != null) selectedStatus = existing.status;
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Labour header
+                Row(
+                  children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryGreen.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        labour.name.isNotEmpty ? labour.name[0].toUpperCase() : 'L',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(labour.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                          Text(
+                            '${labour.role} · ₹${labour.dailyWage.toStringAsFixed(0)}/day',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Mark Attendance for Today',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                // Full Day / Half Day / Absent chips
+                Row(
+                  children: [
+                    _buildAttendanceChip(setSheet, 'Full Day', 'full_day', selectedStatus, Colors.green, (v) => selectedStatus = v),
+                    const SizedBox(width: 8),
+                    _buildAttendanceChip(setSheet, 'Half Day', 'half_day', selectedStatus, Colors.orange, (v) => selectedStatus = v),
+                    const SizedBox(width: 8),
+                    _buildAttendanceChip(setSheet, 'Absent', 'absent', selectedStatus, Colors.red, (v) => selectedStatus = v),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryGreen,
+                      disabledBackgroundColor: Colors.grey.shade200,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: selectedStatus == null
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+                            try {
+                              await _apiService.submitAttendance(today, [
+                                AttendanceEntry(
+                                  labourId: labour.id!,
+                                  name: labour.name,
+                                  status: selectedStatus!,
+                                  wage: labour.dailyWage,
+                                ),
+                              ]);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('✅ Attendance saved successfully'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+                                );
+                              }
+                            }
+                          },
+                    child: Text(
+                      'Save Attendance',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAttendanceChip(
+    StateSetter setSheet,
+    String label,
+    String value,
+    String? selectedStatus,
+    Color color,
+    Function(String) onSelect,
+  ) {
+    final isSelected = selectedStatus == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setSheet(() => onSelect(value)),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? color : Colors.transparent,
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: isSelected ? color : Colors.grey.shade300, width: 1.5),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   double get _totalDailyPayroll => _allLabours.fold(0.0, (sum, l) => sum + l.dailyWage);
@@ -264,6 +428,7 @@ class _LabourScreenState extends State<LabourScreen> {
                                 MaterialPageRoute(builder: (context) => LabourDetailsScreen(labour: labour)),
                               ),
                               onDelete: () => _deleteLabour(labour.id!),
+                              onMarkAttendance: () => _showMarkAttendanceSheet(labour),
                             );
                           },
                         ),
