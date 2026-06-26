@@ -9,12 +9,14 @@ class AddSupplierPaymentScreen extends StatefulWidget {
   final String supplierId;
   final String supplierName;
   final double pendingBalance;
+  final bool supplierIsActive;
 
   const AddSupplierPaymentScreen({
     super.key,
     required this.supplierId,
     required this.supplierName,
     required this.pendingBalance,
+    this.supplierIsActive = true,
   });
 
   @override
@@ -257,9 +259,9 @@ class _AddSupplierPaymentScreenState extends State<AddSupplierPaymentScreen> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: (_isLoading || _isOverpaid) ? null : _save,
+                onPressed: (_isLoading || _isOverpaid || !widget.supplierIsActive) ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _isOverpaid ? Colors.grey : Colors.purple,
+                  backgroundColor: (_isOverpaid || !widget.supplierIsActive) ? Colors.grey : Colors.purple,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
@@ -273,9 +275,11 @@ class _AddSupplierPaymentScreenState extends State<AddSupplierPaymentScreen> {
                 label: Text(
                   _isLoading
                       ? 'Saving...'
-                      : _isOverpaid
-                          ? 'Overpaid — Blocked'
-                          : 'Record Payment',
+                      : !widget.supplierIsActive
+                          ? 'Supplier Inactive - Blocked'
+                          : _isOverpaid
+                              ? 'Overpaid — Blocked'
+                              : 'Record Payment',
                   style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),

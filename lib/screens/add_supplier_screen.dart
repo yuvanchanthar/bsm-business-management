@@ -9,7 +9,11 @@ import 'contact_picker_screen.dart';
 import '../widgets/phone_field_with_country.dart';
 
 class AddSupplierScreen extends StatefulWidget {
-  const AddSupplierScreen({super.key});
+  /// When non-null, the screen enters Edit mode: fields are pre-filled,
+  /// the title becomes "Edit Supplier", and Save calls PUT instead of POST.
+  final SupplierModel? supplier;
+
+  const AddSupplierScreen({super.key, this.supplier});
 
   @override
   State<AddSupplierScreen> createState() => _AddSupplierScreenState();
@@ -18,19 +22,35 @@ class AddSupplierScreen extends StatefulWidget {
 class _AddSupplierScreenState extends State<AddSupplierScreen> {
   final _nameCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
   final _openingBalanceCtrl = TextEditingController();
-  
+
   String _fullPhoneNumber = '';
   String? _initialPhone; // for prefilling from contacts
-  
+
   bool _isLoading = false;
   bool _showSelectionMode = true;
   late SupplierService _service;
+
+  bool get _isEditMode => widget.supplier != null;
 
   @override
   void initState() {
     super.initState();
     _init();
+
+    // Edit mode: pre-fill and jump straight to the form.
+    if (_isEditMode) {
+      final s = widget.supplier!;
+      _nameCtrl.text = s.name;
+      _fullPhoneNumber = s.phone;
+      _initialPhone = s.phone;
+      _addressCtrl.text = s.address;
+      _notesCtrl.text = s.notes;
+      _openingBalanceCtrl.text =
+          s.openingBalance > 0 ? s.openingBalance.toStringAsFixed(0) : '';
+      _showSelectionMode = false;
+    }
   }
 
   Future<void> _init() async {
@@ -42,13 +62,14 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _addressCtrl.dispose();
+    _notesCtrl.dispose();
     _openingBalanceCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _handleImportContacts() async {
     final status = await Permission.contacts.request();
-    
+
     if (status.isGranted) {
       if (!mounted) return;
       final result = await Navigator.push(
@@ -86,25 +107,55 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final opBal = double.tryParse(_openingBalanceCtrl.text.trim()) ?? 0.0;
-      final supplier = SupplierModel(
-        name: name,
-        phone: _fullPhoneNumber,
-        address: _addressCtrl.text.trim(),
-        openingBalance: opBal,
-      );
-      await _service.addSupplier(supplier);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Supplier added successfully'), backgroundColor: Colors.green),
+      final opBal =
+          double.tryParse(_openingBalanceCtrl.text.trim()) ?? 0.0;
+
+      if (_isEditMode) {
+        // ── Update existing supplier ──────────────────────────────────────
+        await _service.updateSupplier(widget.supplier!.id!, {
+          'name': name,
+          'phone': _fullPhoneNumber,
+          'address': _addressCtrl.text.trim(),
+          'notes': _notesCtrl.text.trim(),
+          'openingBalance': opBal,
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Supplier updated successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        // ── Add new supplier (existing behaviour, unchanged) ──────────────
+        final supplier = SupplierModel(
+          name: name,
+          phone: _fullPhoneNumber,
+          address: _addressCtrl.text.trim(),
+          notes: _notesCtrl.text.trim(),
+          openingBalance: opBal,
         );
-        Navigator.pop(context, true);
+        await _service.addSupplier(supplier);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Supplier added successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -117,24 +168,30 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        leading: _showSelectionMode 
-          ? IconButton(
-              icon: const Icon(Icons.close, color: AppColors.textPrimary),
-              onPressed: () => Navigator.pop(context),
-            )
-          : IconButton(
-              icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-              onPressed: () => setState(() {
-                _showSelectionMode = true;
-                _initialPhone = null; // clear prepopulated phone on back
-              }),
-            ),
+        leading: _showSelectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                onPressed: () => Navigator.pop(context),
+              )
+            : IconButton(
+                icon:
+                    const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+                onPressed: _isEditMode
+                    // In edit mode, back always pops (no selection screen).
+                    ? () => Navigator.pop(context)
+                    : () => setState(() {
+                          _showSelectionMode = true;
+                          _initialPhone = null;
+                        }),
+              ),
         title: Text(
-          'Add Supplier',
-          style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.purple),
+          _isEditMode ? 'Edit Supplier' : 'Add Supplier',
+          style: GoogleFonts.inter(
+              fontWeight: FontWeight.bold, color: Colors.purple),
         ),
       ),
-      body: _showSelectionMode ? _buildSelectionMode() : _buildManualForm(),
+      body:
+          _showSelectionMode ? _buildSelectionMode() : _buildManualForm(),
     );
   }
 
@@ -260,7 +317,7 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'NEW VENDOR',
+            _isEditMode ? 'EDIT VENDOR' : 'NEW VENDOR',
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.bold,
@@ -278,7 +335,8 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
                 height: 1.15,
               ),
               children: [
-                const TextSpan(text: 'Add your\n'),
+                TextSpan(
+                    text: _isEditMode ? 'Update your\n' : 'Add your\n'),
                 TextSpan(
                   text: 'Supplier.',
                   style: GoogleFonts.inter(color: Colors.purple),
@@ -295,7 +353,9 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
               children: [
                 Text('Phone Number',
                     style: GoogleFonts.inter(
-                        fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary)),
                 const SizedBox(height: 4),
                 PhoneFieldWithCountry(
                   initialValue: _initialPhone,
@@ -309,7 +369,9 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
             ),
           ),
           _buildField('Address (Optional)', 'Street, City', _addressCtrl),
-          _buildField('Opening Balance (Optional)', '0.00', _openingBalanceCtrl,
+          _buildField('Notes (Optional)', 'Any additional notes', _notesCtrl),
+          _buildField('Opening Balance (Optional)', '0.00',
+              _openingBalanceCtrl,
               type: TextInputType.number),
           const SizedBox(height: 32),
           SizedBox(
@@ -320,18 +382,23 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.purple,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
               icon: _isLoading
                   ? const SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.inventory_2_outlined),
               label: Text(
-                _isLoading ? 'Saving...' : 'Save Supplier',
-                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold),
+                _isLoading
+                    ? (_isEditMode ? 'Updating...' : 'Saving...')
+                    : (_isEditMode ? 'Update' : 'Save Supplier'),
+                style: GoogleFonts.inter(
+                    fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -350,22 +417,27 @@ class _AddSupplierScreenState extends State<AddSupplierScreen> {
         children: [
           Text(label,
               style: GoogleFonts.inter(
-                  fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary)),
           const SizedBox(height: 4),
           TextField(
             controller: ctrl,
             keyboardType: type,
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: GoogleFonts.inter(fontSize: 18, color: AppColors.textHint),
+              hintStyle:
+                  GoogleFonts.inter(fontSize: 18, color: AppColors.textHint),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
               enabledBorder: const UnderlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.border, width: 1.5)),
+                  borderSide:
+                      BorderSide(color: AppColors.border, width: 1.5)),
               focusedBorder: const UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.purple, width: 2)),
             ),
-            style: GoogleFonts.inter(fontSize: 18, color: AppColors.textPrimary),
+            style:
+                GoogleFonts.inter(fontSize: 18, color: AppColors.textPrimary),
           ),
         ],
       ),

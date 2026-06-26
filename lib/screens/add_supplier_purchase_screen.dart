@@ -11,11 +11,13 @@ import '../services/token_service.dart';
 class AddSupplierPurchaseScreen extends StatefulWidget {
   final String supplierId;
   final String supplierName;
+  final bool supplierIsActive;
 
   const AddSupplierPurchaseScreen({
     super.key,
     required this.supplierId,
     required this.supplierName,
+    this.supplierIsActive = true,
   });
 
   @override
@@ -496,14 +498,13 @@ class _AddSupplierPurchaseScreenState
             ),
             const SizedBox(height: 32),
 
-            // Save button
             SizedBox(
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: (_isLoading || !_serviceReady) ? null : _save,
+                onPressed: (_isLoading || !_serviceReady || !widget.supplierIsActive) ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
+                  backgroundColor: !widget.supplierIsActive ? Colors.grey : Colors.purple,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
@@ -516,7 +517,9 @@ class _AddSupplierPurchaseScreenState
                             color: Colors.white, strokeWidth: 2))
                     : const Icon(Icons.shopping_bag_outlined),
                 label: Text(
-                  _isLoading ? 'Saving...' : 'Record Purchase',
+                  _isLoading 
+                      ? 'Saving...' 
+                      : (!widget.supplierIsActive ? 'Supplier Inactive - Blocked' : 'Record Purchase'),
                   style: GoogleFonts.inter(
                       fontSize: 16, fontWeight: FontWeight.bold),
                 ),

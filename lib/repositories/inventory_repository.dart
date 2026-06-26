@@ -4,6 +4,7 @@
 
 import '../models/inventory_model.dart';
 import '../services/supplier_service.dart';
+import '../services/inventory_service.dart';
 import '../services/token_service.dart';
 
 class InventoryRepository {
@@ -94,5 +95,26 @@ class InventoryRepository {
   List<InventoryItemModel> _dedupe(List<InventoryItemModel> items) {
     final seen = <String>{};
     return items.where((item) => seen.add(item.itemName)).toList();
+  }
+
+  // ── Category Drill-Down ────────────────────────────────────────────────────
+
+  InventoryService? _inventorySvc;
+
+  Future<InventoryService> _invSvc() async {
+    _inventorySvc ??= InventoryService(await TokenService.getInstance());
+    return _inventorySvc!;
+  }
+
+  /// GET /inventory/by-category — category list with totals.
+  Future<List<InventoryCategorySummary>> getInventoryByCategory() async {
+    final svc = await _invSvc();
+    return svc.getInventoryByCategory();
+  }
+
+  /// GET /inventory/category/{categoryName} — summary + items for one category.
+  Future<InventoryCategoryDetail> getCategoryDetail(String categoryName) async {
+    final svc = await _invSvc();
+    return svc.getCategoryDetail(categoryName);
   }
 }

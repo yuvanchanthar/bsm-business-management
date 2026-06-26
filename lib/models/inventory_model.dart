@@ -1,4 +1,5 @@
 // inventory_model.dart — Inventory & Stock Management Models
+// Added: InventoryCategorySummary, InventoryCategoryDetail (category drill-down)
 
 double _invNum(dynamic v) {
   if (v == null) return 0.0;
@@ -162,6 +163,91 @@ class InventoryDetailModel {
       history: historyJson
           .map((e) =>
               StockHistoryEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+// ── InventoryCategorySummary ──────────────────────────────────────────────────
+// Returned by GET /api/inventory/by-category
+
+class InventoryCategorySummary {
+  final String? id;
+  final String name;
+  final String description;
+  final int itemCount;
+  final double totalStock;
+  final int lowStockCount;
+  final String unit;
+
+  const InventoryCategorySummary({
+    this.id,
+    required this.name,
+    this.description = '',
+    required this.itemCount,
+    required this.totalStock,
+    required this.lowStockCount,
+    required this.unit,
+  });
+
+  factory InventoryCategorySummary.fromJson(Map<String, dynamic> json) {
+    return InventoryCategorySummary(
+      id: json['_id']?.toString() ?? json['id']?.toString(),
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
+      totalStock: _invNum(json['totalStock']),
+      lowStockCount: (json['lowStockCount'] as num?)?.toInt() ?? 0,
+      unit: json['unit']?.toString() ?? 'bags',
+    );
+  }
+}
+
+// ── InventoryCategoryDetail ───────────────────────────────────────────────────
+// Returned by GET /api/inventory/category/{categoryName}
+
+class CategoryItemSummary {
+  final int totalItems;
+  final double totalStock;
+  final int lowStockCount;
+  final String unit;
+
+  const CategoryItemSummary({
+    required this.totalItems,
+    required this.totalStock,
+    required this.lowStockCount,
+    required this.unit,
+  });
+
+  factory CategoryItemSummary.fromJson(Map<String, dynamic> json) {
+    return CategoryItemSummary(
+      totalItems: (json['totalItems'] as num?)?.toInt() ?? 0,
+      totalStock: _invNum(json['totalStock']),
+      lowStockCount: (json['lowStockCount'] as num?)?.toInt() ?? 0,
+      unit: json['unit']?.toString() ?? 'bags',
+    );
+  }
+}
+
+class InventoryCategoryDetail {
+  final String categoryName;
+  final CategoryItemSummary summary;
+  final List<InventoryItemModel> items;
+
+  const InventoryCategoryDetail({
+    required this.categoryName,
+    required this.summary,
+    required this.items,
+  });
+
+  factory InventoryCategoryDetail.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? [];
+    return InventoryCategoryDetail(
+      categoryName: json['categoryName']?.toString() ?? '',
+      summary: CategoryItemSummary.fromJson(
+          json['summary'] as Map<String, dynamic>? ?? {}),
+      items: rawItems
+          .map((e) => InventoryItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }

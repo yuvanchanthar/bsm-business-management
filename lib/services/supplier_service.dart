@@ -85,6 +85,36 @@ class SupplierService {
     }
   }
 
+  /// PUT /suppliers/:id
+  Future<bool> updateSupplier(String id, Map<String, dynamic> data) async {
+    try {
+      await _dio.put('/suppliers/$id', data: data);
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// PATCH /suppliers/:id/status
+  Future<void> updateSupplierStatus(String supplierId, bool isActive) async {
+    try {
+      await _dio.patch('/suppliers/$supplierId/status', data: {'isActive': isActive});
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+
+  /// DELETE /suppliers/:id
+  Future<bool> deleteSupplier(String id) async {
+    try {
+      await _dio.delete('/suppliers/$id');
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
   /// GET /suppliers/:id/ledger
   Future<SupplierLedgerModel> getSupplierLedger(String supplierId) async {
     try {
@@ -377,8 +407,8 @@ class SupplierService {
   }) async {
     try {
       await _dio.post('/inventory/item', data: {
+        'categoryName': category,
         'itemName': itemName,
-        'category': category,
         'unit': unit,
         'lowStockThreshold': threshold,
       });

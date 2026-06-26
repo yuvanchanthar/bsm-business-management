@@ -23,6 +23,8 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
   List<dynamic> _topSuppliers = [];
   bool _isLoading = true;
   String? _error;
+  String? _deletingId; // tracks which supplier is being deleted
+  String? _statusUpdatingId; // tracks which supplier is being activated/deactivated
   final TextEditingController _searchCtrl = TextEditingController();
 
   @override
@@ -86,6 +88,114 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
           s.name.toLowerCase().contains(q) || s.phone.contains(q)).toList();
     });
   }
+
+  Future<void> _deleteSupplier(SupplierModel supplier) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Delete Supplier',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete this supplier?',
+          style: GoogleFonts.inter(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: GoogleFonts.inter()),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _deletingId = supplier.id);
+    try {
+      await _service.deleteSupplier(supplier.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Supplier deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _fetchSuppliers();
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
+    }
+  }
+
+  Future<void> _updateSupplierStatus(SupplierModel supplier, bool isActive) async {
+    final actionName = isActive ? 'Activate' : 'Deactivate';
+    
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('$actionName Supplier',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Text(
+          isActive 
+            ? 'Do you want to activate this supplier?'
+            : 'Are you sure you want to deactivate this supplier?\n\nInactive suppliers cannot be used for new purchases or payments.',
+          style: GoogleFonts.inter(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: isActive ? Colors.green : Colors.orange, 
+                foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(actionName, style: GoogleFonts.inter()),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _statusUpdatingId = supplier.id);
+    try {
+      await _service.updateSupplierStatus(supplier.id!, isActive);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Supplier ${actionName.toLowerCase()}d successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _fetchSuppliers();
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _statusUpdatingId = null);
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -309,19 +419,36 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
                               padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
                               itemCount: _filtered.length,
                               separatorBuilder: (_, _s) => const SizedBox(height: 12),
-                              itemBuilder: (context, i) =>
-                                  _SupplierCard(supplier: _filtered[i], onTap: () async {
-                                    await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => SupplierDetailScreen(
-                                          supplierId: _filtered[i].id!,
-                                          supplierName: _filtered[i].name,
-                                        ),
+                              itemBuilder: (context, i) => _SupplierCard(
+                                supplier: _filtered[i],
+                                isDeleting: _deletingId == _filtered[i].id,
+                                onTap: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => SupplierDetailScreen(
+                                        supplierId: _filtered[i].id!,
+                                        supplierName: _filtered[i].name,
                                       ),
-                                    );
-                                    _fetchSuppliers(); // Refresh totals on return
-                                  }),
+                                    ),
+                                  );
+                                  _fetchSuppliers();
+                                },
+                                onEdit: () async {
+                                  final result = await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AddSupplierScreen(
+                                          supplier: _filtered[i]),
+                                    ),
+                                  );
+                                  if (result == true) _fetchSuppliers();
+                                },
+                                onDelete: () => _deleteSupplier(_filtered[i]),
+                                isUpdatingStatus: _statusUpdatingId == _filtered[i].id,
+                                onActivate: () => _updateSupplierStatus(_filtered[i], true),
+                                onDeactivate: () => _updateSupplierStatus(_filtered[i], false),
+                              ),
                             ),
             ),
           ],
@@ -432,8 +559,23 @@ class _SupplierListScreenState extends State<SupplierListScreen> {
 class _SupplierCard extends StatelessWidget {
   final SupplierModel supplier;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onActivate;
+  final VoidCallback onDeactivate;
+  final bool isDeleting;
+  final bool isUpdatingStatus;
 
-  const _SupplierCard({required this.supplier, required this.onTap});
+  const _SupplierCard({
+    required this.supplier,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onActivate,
+    required this.onDeactivate,
+    required this.isDeleting,
+    required this.isUpdatingStatus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -487,15 +629,46 @@ class _SupplierCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    supplier.name,
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          supplier.name,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (supplier.isActive)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '🟢 Active',
+                            style: GoogleFonts.inter(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '🔴 Inactive',
+                            style: GoogleFonts.inter(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -579,6 +752,74 @@ class _SupplierCard extends StatelessWidget {
                 ],
                 const SizedBox(height: 4),
                 const Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
+                const SizedBox(height: 6),
+                if (isDeleting || isUpdatingStatus)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(color: Colors.purple, strokeWidth: 2),
+                  )
+                else
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: AppColors.textSecondary, size: 20),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    onSelected: (val) {
+                      if (val == 'edit') onEdit();
+                      else if (val == 'delete') onDelete();
+                      else if (val == 'activate') onActivate();
+                      else if (val == 'deactivate') onDeactivate();
+                    },
+                    itemBuilder: (context) {
+                      final hasHistory = supplier.totalPurchased > 0 || supplier.totalPaid > 0;
+                      return [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit_outlined, color: Colors.purple, size: 18),
+                              const SizedBox(width: 8),
+                              Text('Edit', style: GoogleFonts.inter()),
+                            ],
+                          ),
+                        ),
+                        if (!hasHistory)
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                const SizedBox(width: 8),
+                                Text('Delete', style: GoogleFonts.inter(color: Colors.red)),
+                              ],
+                            ),
+                          ),
+                        if (hasHistory)
+                          if (supplier.isActive)
+                            PopupMenuItem(
+                              value: 'deactivate',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.block, color: Colors.orange, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text('Deactivate', style: GoogleFonts.inter(color: Colors.orange)),
+                                ],
+                              ),
+                            )
+                          else
+                            PopupMenuItem(
+                              value: 'activate',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text('Activate', style: GoogleFonts.inter(color: Colors.green)),
+                                ],
+                              ),
+                            ),
+                      ];
+                    },
+                  ),
               ],
             ),
           ],

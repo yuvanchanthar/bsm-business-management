@@ -103,25 +103,29 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
         .where((i) => i.id != null && seen.add(i.id!))
         .toList();
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: EdgeInsets.fromLTRB(
-        24, 24, 24,
-        MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.85,
-          ),
-          child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+    return Builder(
+      builder: (ctx) {
+        // Remove viewInsets from the local MediaQuery so the Dialog's built-in
+        // inset handling shifts the dialog upward without shrinking it.
+        return MediaQuery.removeViewInsets(
+          context: ctx,
+          removeBottom: true,
+          child: Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+                ),
+                child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
 
                 // ── Header ────────────────────────────────────────────────
                 Row(children: [
@@ -296,6 +300,9 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
         ),
         ),
       ),
+      ),
+      );
+      },
     );
   }
 }

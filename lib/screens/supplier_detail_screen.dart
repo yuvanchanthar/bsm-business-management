@@ -8,6 +8,7 @@ import '../services/supplier_service.dart';
 import '../services/token_service.dart';
 import '../services/pdf_service.dart';
 import '../widgets/edit_supplier_payment_dialog.dart';
+import 'add_supplier_screen.dart';
 import 'add_supplier_purchase_screen.dart';
 import 'add_supplier_payment_screen.dart';
 import 'edit_supplier_purchase_screen.dart';
@@ -31,6 +32,8 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen>
   late SupplierService _service;
   SupplierLedgerModel? _ledger;
   bool _isLoading = true;
+  bool _isDeleting = false;
+  bool _isUpdatingStatus = false;
   String? _error;
   late TabController _tabController;
 
@@ -64,6 +67,168 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen>
       if (mounted) setState(() { _ledger = ledger; _isLoading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
+    }
+  }
+
+  Future<void> _editSupplier() async {
+    if (_ledger == null) return;
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddSupplierScreen(supplier: _ledger!.supplier),
+      ),
+    );
+    if (result == true) _fetch();
+  }
+
+  Future<void> _addPurchase() async {
+    if (_ledger == null) return;
+    if (!_ledger!.supplier.isActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot add purchase for an inactive supplier', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddSupplierPurchaseScreen(
+          supplierId: widget.supplierId,
+          supplierName: widget.supplierName,
+          supplierIsActive: _ledger!.supplier.isActive,
+        ),
+      ),
+    );
+    if (result == true) _fetch();
+  }
+
+  Future<void> _addPayment() async {
+    if (_ledger == null) return;
+    if (!_ledger!.supplier.isActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot add payment for an inactive supplier', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddSupplierPaymentScreen(
+          supplierId: widget.supplierId,
+          supplierName: widget.supplierName,
+          pendingBalance: _ledger!.pendingBalance,
+          supplierIsActive: _ledger!.supplier.isActive,
+        ),
+      ),
+    );
+    if (result == true) _fetch();
+  }
+
+  Future<void> _deleteSupplier() async {
+    if (_ledger == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Delete Supplier',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Text(
+          'Are you sure you want to delete this supplier?',
+          style: GoogleFonts.inter(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: GoogleFonts.inter()),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await _service.deleteSupplier(widget.supplierId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Supplier deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDeleting = false);
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateSupplierStatus(bool isActive) async {
+    if (_ledger == null) return;
+    final actionName = isActive ? 'Activate' : 'Deactivate';
+    
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('$actionName Supplier',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+        content: Text(
+          isActive 
+            ? 'Do you want to activate this supplier?'
+            : 'Are you sure you want to deactivate this supplier?\n\nInactive suppliers cannot be used for new purchases or payments.',
+          style: GoogleFonts.inter(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: isActive ? Colors.green : Colors.orange, 
+                foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(actionName, style: GoogleFonts.inter()),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _isUpdatingStatus = true);
+    try {
+      await _service.updateSupplierStatus(widget.supplierId, isActive);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Supplier ${actionName.toLowerCase()}d successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        _fetch();
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdatingStatus = false);
     }
   }
 
@@ -105,12 +270,45 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen>
           style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.purple),
         ),
         actions: [
-          if (_ledger != null && !_isLoading)
+          if (_ledger != null && !_isLoading) ...[
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: Colors.purple),
+              tooltip: 'Edit Supplier',
+              onPressed: _isDeleting || _isUpdatingStatus ? null : _editSupplier,
+            ),
+            if (_isDeleting || _isUpdatingStatus)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(color: Colors.red, strokeWidth: 2),
+                ),
+              )
+            else if (_ledger!.totalPurchased == 0 && _ledger!.totalPaid == 0)
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                tooltip: 'Delete Supplier',
+                onPressed: _deleteSupplier,
+              )
+            else if (_ledger!.supplier.isActive)
+              IconButton(
+                icon: const Icon(Icons.block, color: Colors.orange),
+                tooltip: 'Deactivate Supplier',
+                onPressed: () => _updateSupplierStatus(false),
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+                tooltip: 'Activate Supplier',
+                onPressed: () => _updateSupplierStatus(true),
+              ),
             IconButton(
               icon: const Icon(Icons.share, color: Colors.purple),
               tooltip: 'Share Ledger PDF',
               onPressed: _shareLedgerPdf,
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
             onPressed: _fetch,
@@ -254,6 +452,31 @@ class _SupplierDetailScreenState extends State<SupplierDetailScreen>
                     if (ledger.supplier.phone.isNotEmpty)
                       Text(ledger.supplier.phone,
                           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                    if (ledger.supplier.isActive)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '🟢 Active',
+                          style: GoogleFonts.inter(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '🔴 Inactive',
+                          style: GoogleFonts.inter(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                   ],
                 ),
               ),

@@ -11,6 +11,7 @@ import '../widgets/add_inventory_item_dialog.dart';
 import '../widgets/add_existing_stock_dialog.dart';
 import '../widgets/edit_inventory_item_dialog.dart';
 import 'inventory_detail_screen.dart';
+import 'inventory_category_items_screen.dart';
 
 class InventoryListScreen extends StatefulWidget {
   const InventoryListScreen({super.key});
@@ -32,8 +33,9 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
   final _itemSearchCtrl = TextEditingController();
 
   // Categories State
-  List<CategoryModel> _allCategories = [];
-  List<CategoryModel> _filteredCategories = [];
+  List<CategoryModel> _allCategories = [];             // raw CategoryModel for dialogs
+  List<InventoryCategorySummary> _allCategorySummaries = [];
+  List<InventoryCategorySummary> _filteredCategorySummaries = [];
   bool _isLoadingCategories = true;
   String? _categoriesError;
   final _categorySearchCtrl = TextEditingController();
@@ -57,6 +59,10 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
   Future<void> _initService() async {
     final tokenSvc = await TokenService.getInstance();
     _service = SupplierService(tokenSvc);
+    _refreshAll();
+  }
+
+  Future<void> _refreshAll() async {
     _fetchInventory();
     _fetchCategories();
   }
@@ -115,7 +121,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
       builder: (_) => EditInventoryItemDialog(
         item: item,
         categories: _allCategories,
-        onSaved: _fetchInventory,
+        onSaved: _refreshAll,
       ),
     );
   }
@@ -214,7 +220,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         margin: const EdgeInsets.all(16),
       ));
-      _fetchInventory();
+      _refreshAll();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -237,9 +243,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
     if (!mounted || _service == null) return;
     setState(() { _isLoadingCategories = true; _categoriesError = null; });
     try {
+      // Fetch raw CategoryModel for dialogs (unchanged)
       final categories = await _service!.getCategories();
+      // Fetch enriched summaries for the category cards
+      final summaries = await _repo.getInventoryByCategory();
       if (!mounted) return;
-      setState(() { _allCategories = categories; _isLoadingCategories = false; });
+      setState(() {
+        _allCategories = categories;
+        _allCategorySummaries = summaries;
+        _isLoadingCategories = false;
+      });
       _applyCategoryFilters();
     } catch (e) {
       if (!mounted) return;
@@ -254,7 +267,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
     if (!mounted) return;
     final q = _categorySearchCtrl.text.toLowerCase();
     setState(() {
-      _filteredCategories = _allCategories.where((cat) {
+      _filteredCategorySummaries = _allCategorySummaries.where((cat) {
         return cat.name.toLowerCase().contains(q) || cat.description.toLowerCase().contains(q);
       }).toList();
     });
@@ -292,7 +305,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                     Navigator.pop(ctx);
                     showDialog(
                       context: context,
-                      builder: (_) => AddCategoryDialog(onSaved: _fetchCategories),
+                      builder: (_) => AddCategoryDialog(onSaved: _refreshAll),
                     );
                   },
                 )
@@ -308,7 +321,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                       context: context,
                       builder: (_) => AddInventoryItemDialog(
                         categories: _allCategories,
-                        onSaved: _fetchInventory,
+                        onSaved: _refreshAll,
                       ),
                     );
                   },
@@ -325,9 +338,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                       context: context,
                       builder: (_) => AddExistingStockDialog(
                         allItems: _allItems,
-                        onSaved: () {
-                          _fetchInventory();
-                        },
+                        onSaved: _refreshAll,
                       ),
                     );
                   },
@@ -423,41 +434,66 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
             ? const Center(child: CircularProgressIndicator(color: _teal))
             : _categoriesError != null
               ? _buildError(_categoriesError!, _fetchCategories)
-              : _filteredCategories.isEmpty
+              : _filteredCategorySummaries.isEmpty
                 ? _buildEmptyState('No categories found', Icons.category_outlined)
                 : RefreshIndicator(
-                    onRefresh: _fetchCategories,
+                    onRefresh: _refreshAll,
                     color: _teal,
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                      itemCount: _filteredCategories.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemCount: _filteredCategorySummaries.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (ctx, i) {
-                        final cat = _filteredCategories[i];
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 4))]),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 44, height: 44,
-                                decoration: BoxDecoration(color: _teal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.category, color: _teal, size: 22)
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(cat.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                                    if (cat.description.isNotEmpty)
-                                      Text(cat.description, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
-                                  ],
+                        final cat = _filteredCategorySummaries[i];
+                        return InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => InventoryCategoryItemsScreen(
+                                  categoryName: cat.name,
                                 ),
                               ),
-                            ],
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 4))]),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 44, height: 44,
+                                  decoration: BoxDecoration(color: _teal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.category, color: _teal, size: 22),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(cat.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${cat.itemCount} Item${cat.itemCount == 1 ? '' : 's'}  •  ${cat.totalStock.toStringAsFixed(0)} ${cat.unit}',
+                                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                                      ),
+                                      if (cat.lowStockCount > 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            'Low Stock: ${cat.lowStockCount}',
+                                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right, color: _teal, size: 20),
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -519,7 +555,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
               : _filteredItems.isEmpty
                 ? _buildEmptyState('No items found', Icons.inventory_2_outlined)
                 : RefreshIndicator(
-                    onRefresh: _fetchInventory,
+                    onRefresh: _refreshAll,
                     color: _teal,
                     child: ListView.separated(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
@@ -540,7 +576,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                                 ),
                               ),
                             );
-                            _fetchInventory();
+                            _refreshAll();
                           },
                           onEdit: () => _showEditDialog(item),
                           onDelete: () => _confirmDelete(item),

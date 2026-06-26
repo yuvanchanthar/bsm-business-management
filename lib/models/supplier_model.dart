@@ -24,11 +24,13 @@ class SupplierModel {
   final String name;
   final String phone;
   final String address;
+  final String notes;
   final double totalPurchased;
   final double totalPaid;
   final double pendingBalance;
   final double openingBalance;
   final double advanceBalance;
+  final bool isActive;
   final DateTime? createdAt;
 
   SupplierModel({
@@ -36,11 +38,13 @@ class SupplierModel {
     required this.name,
     required this.phone,
     this.address = '',
+    this.notes = '',
     this.totalPurchased = 0.0,
     this.totalPaid = 0.0,
     this.pendingBalance = 0.0,
     this.openingBalance = 0.0,
     this.advanceBalance = 0.0,
+    this.isActive = true,
     this.createdAt,
   });
 
@@ -52,11 +56,13 @@ class SupplierModel {
       name: json['name']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
       address: json['address']?.toString() ?? '',
+      notes: json['notes']?.toString() ?? '',
       totalPurchased: _safeNum(json, ['totalPurchased', 'totalPurchase', 'purchased']),
       totalPaid: _safeNum(json, ['totalPaid', 'paid']),
       pendingBalance: _safeNum(json, ['pendingBalance', 'balance', 'pending']),
       openingBalance: _safeNum(json, ['openingBalance', 'opBal', 'opening_balance']),
       advanceBalance: _safeNum(json, ['advanceBalance', 'advance_balance', 'advance']),
+      isActive: json['isActive'] ?? true,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
           : null,
@@ -67,7 +73,9 @@ class SupplierModel {
         'name': name,
         'phone': phone,
         'address': address,
+        if (notes.isNotEmpty) 'notes': notes,
         'openingBalance': openingBalance,
+        'isActive': isActive,
       };
 }
 
