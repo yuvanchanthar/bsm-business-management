@@ -16,6 +16,8 @@ import 'package:printing/printing.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:flutter/services.dart';
 import 'delivery_detail_screen.dart';
+import 'credit_sale_detail_screen.dart';
+import 'customer_statement_screen.dart';
 
 // Simple DTO to keep SliverList builder clean.
 // Stores the precomputed running balance for each entry.
@@ -640,13 +642,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     final List<_LedgerItemWithBalance> itemsWithBalance = [];
     for (var t in ledger.transactions) {
       if (t.type == LedgerEntryType.delivery ||
-          t.type == LedgerEntryType.openingBalance) {
-        // Both deliveries and the opening balance increase what the customer owes.
-        runningBalance += t.amount;
-      } else {
-        // Payments reduce the running balance.
-        runningBalance -= t.amount;
-      }
+    t.type == LedgerEntryType.openingBalance ||
+    t.type == LedgerEntryType.creditSale) {
+  runningBalance += t.amount;
+} else {
+  runningBalance -= t.amount;
+}
+      
       itemsWithBalance.add(_LedgerItemWithBalance(entry: t, balance: runningBalance));
     }
 
@@ -692,31 +694,64 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  void _navigateToCreditSaleDetail(LedgerEntry entry) {
+    final targetId = entry.id;
+    if (targetId == null || targetId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: Sale ID missing for this entry'),
+            backgroundColor: Colors.red.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreditSaleDetailScreen(saleId: targetId),
+      ),
+    );
+  }
+
   Widget _buildLedgerRow(LedgerEntry t, double bal) {
     final isDelivery = t.type == LedgerEntryType.delivery;
-    final isOpeningBalance = t.type == LedgerEntryType.openingBalance;
-
+final isCreditSale = t.type == LedgerEntryType.creditSale;
+final isOpeningBalance = t.type == LedgerEntryType.openingBalance;
+final isPayment = t.type == LedgerEntryType.payment;
+   
     // Colour scheme:
     //   Opening Balance → Amber  (it's an initial debt, not a new delivery)
     //   Delivery        → Orange-Red  (debit)
     //   Payment         → Green  (credit)
-    final Color amountColor = isOpeningBalance
+    final Color amountColor =
+    isOpeningBalance
         ? Colors.amber.shade800
         : isDelivery
             ? const Color(0xFFE64A19)
-            : const Color(0xFF2E7D32);
+            : isCreditSale
+                ? Colors.deepPurple
+                : const Color(0xFF2E7D32);
 
-    final IconData rowIcon = isOpeningBalance
+    final IconData rowIcon =
+    isOpeningBalance
         ? Icons.account_balance_wallet_outlined
         : isDelivery
             ? Icons.local_shipping_outlined
-            : Icons.payments_outlined;
+            : isCreditSale
+                ? Icons.shopping_cart_checkout
+                : Icons.payments_outlined;
 
-    final String rowLabel = isOpeningBalance
+    final String rowLabel =
+    isOpeningBalance
         ? 'Opening Balance'
         : isDelivery
             ? 'Delivery'
-            : 'Payment';
+            : isCreditSale
+                ? 'Credit Sale'
+                : 'Payment';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -733,14 +768,22 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       ),
       child: Material(
         color: isOpeningBalance
-            ? Colors.amber.withValues(alpha: 0.06)
-            : isDelivery
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.7),
+    ? Colors.amber.withValues(alpha: 0.06)
+    : isCreditSale
+        ? Colors.deepPurple.withValues(alpha: 0.05)
+        : Colors.white,
+       
+            
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: isDelivery ? () => _navigateToDeliveryDetail(t) : null,
+          onTap: () {
+            if (isDelivery) {
+              _navigateToDeliveryDetail(t);
+            } else if (isCreditSale) {
+              _navigateToCreditSaleDetail(t);
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -775,7 +818,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          if (isDelivery) ...[
+                          if (isDelivery || isCreditSale) ...[
                             const SizedBox(width: 8),
                             Icon(Icons.chevron_right, size: 16, color: AppColors.primaryGreen.withValues(alpha: 0.6)),
                           ],
@@ -1105,6 +1148,19 @@ BSM Agro Industry''';
                 style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.visibility_outlined, color: Colors.deepPurple),
+                title: Text('View Statement (In-App)', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                subtitle: Text('Browse all transactions with Credit Sale details', style: GoogleFonts.inter(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => CustomerStatementScreen(
+                    customerId: widget.customerId,
+                    customerName: _ledger?.customer.name ?? '',
+                  )));
+                },
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
               ListTile(
                 leading: const Icon(Icons.list_alt, color: AppColors.primaryGreen),
                 title: Text('All Transactions', style: GoogleFonts.inter()),

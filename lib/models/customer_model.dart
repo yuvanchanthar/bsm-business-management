@@ -15,8 +15,7 @@ class CustomerModel {
   /// Computes the correct net balance using all three components.
   /// This mirrors the formula on the Ledger Screen and the backend aggregate:
   ///   netBalance = openingBalance + totalDelivered - totalPaid
-  double get netBalance => openingBalance + totalDelivered - totalPaid;
-
+  double get netBalance => balance;
   CustomerModel({
     this.id,
     required this.name,

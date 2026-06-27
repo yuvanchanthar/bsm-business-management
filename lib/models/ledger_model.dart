@@ -49,10 +49,15 @@ class CustomerLedgerModel {
     double calcDelivered = 0.0;
     double calcPaid = 0.0;
     for (var t in txns) {
-      if (t.type == LedgerEntryType.delivery) calcDelivered += t.amount;
-      if (t.type == LedgerEntryType.payment) calcPaid += t.amount;
-    }
+  if (t.type == LedgerEntryType.delivery ||
+      t.type == LedgerEntryType.creditSale) {
+    calcDelivered += t.amount;
+  }
 
+  if (t.type == LedgerEntryType.payment) {
+    calcPaid += t.amount;
+  }
+}
     final customer = CustomerModel.fromJson(
         json['customer'] as Map<String, dynamic>? ?? {});
 
@@ -75,7 +80,7 @@ class CustomerLedgerModel {
   }
 }
 
-enum LedgerEntryType { delivery, payment, openingBalance }
+enum LedgerEntryType { delivery, payment, openingBalance, creditSale }
 
 class LedgerEntry {
   final DateTime date;
@@ -117,16 +122,31 @@ class LedgerEntry {
     print('--------------------------------------------------');
 
     // Resolve type explicitly — no silent fallback to payment for unknown types.
-    LedgerEntryType resolvedType;
     final rawType = json['type']?.toString();
-    if (rawType == 'delivery') {
-      resolvedType = LedgerEntryType.delivery;
-    } else if (rawType == 'opening_balance') {
-      resolvedType = LedgerEntryType.openingBalance;
-    } else {
-      // 'payment' or any other known type defaults to payment.
-      resolvedType = LedgerEntryType.payment;
-    }
+
+late final LedgerEntryType resolvedType;
+
+switch (rawType) {
+  case 'opening_balance':
+    resolvedType = LedgerEntryType.openingBalance;
+    break;
+
+  case 'delivery':
+    resolvedType = LedgerEntryType.delivery;
+    break;
+
+  case 'credit_sale':
+    resolvedType = LedgerEntryType.creditSale;
+    break;
+
+  case 'payment':
+    resolvedType = LedgerEntryType.payment;
+    break;
+
+  default:
+    resolvedType = LedgerEntryType.payment;
+    break;
+}
 
     return LedgerEntry(
       date: json['date'] != null

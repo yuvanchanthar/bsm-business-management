@@ -2,14 +2,23 @@ class StatementItem {
   final String name;
   final double quantity;
   final double? price;
+  final String? unit;
+  final double? total;
 
-  StatementItem({required this.name, required this.quantity, this.price});
+  StatementItem({required this.name, required this.quantity, this.price, this.unit, this.total});
 
   factory StatementItem.fromJson(Map<String, dynamic> json) {
+    double? parseOptional(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
     return StatementItem(
-      name: json['itemName']?.toString() ?? json['name']?.toString() ?? json['item']?.toString() ?? '',
+      name: json['itemName']?.toString() ?? json['name']?.toString() ?? json['item']?.toString() ?? json['product']?.toString() ?? '',
       quantity: (json['quantity'] is num) ? (json['quantity'] as num).toDouble() : double.tryParse(json['qty']?.toString() ?? '0') ?? 0.0,
-      price: (json['price'] is num) ? (json['price'] as num).toDouble() : (json['unitPrice'] is num) ? (json['unitPrice'] as num).toDouble() : double.tryParse(json['price']?.toString() ?? ''),
+      price: parseOptional(json['price'] ?? json['unitPrice']),
+      unit: json['unit']?.toString(),
+      total: parseOptional(json['total'] ?? json['totalAmount']),
     );
   }
 }
@@ -21,6 +30,10 @@ class StatementTransaction {
   final double amount;
   final double balance;
   final List<StatementItem> items;
+  // Credit Sale extra fields (populated when type == 'credit_sale')
+  final double grandTotal;
+  final double paymentReceived;
+  final double pendingAmount;
 
   StatementTransaction({
     required this.date,
@@ -29,25 +42,40 @@ class StatementTransaction {
     required this.amount,
     required this.balance,
     this.items = const [],
+    this.grandTotal = 0.0,
+    this.paymentReceived = 0.0,
+    this.pendingAmount = 0.0,
   });
 
   factory StatementTransaction.fromJson(Map<String, dynamic> json) {
-    double debit = (json['debit'] is num) ? (json['debit'] as num).toDouble() : double.tryParse(json['debit']?.toString() ?? '0') ?? 0.0;
-    double credit = (json['credit'] is num) ? (json['credit'] as num).toDouble() : double.tryParse(json['credit']?.toString() ?? '0') ?? 0.0;
-    String description = json['description']?.toString() ?? '';
-    
-    String type = '';
-    double amount = 0.0;
+    double parseDouble(dynamic v, {double fallback = 0.0}) {
+      if (v == null) return fallback;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? fallback;
+    }
 
-    if (description.toLowerCase().contains('opening balance')) {
-      type = 'opening_balance';
+    double debit  = parseDouble(json['debit']);
+    double credit = parseDouble(json['credit']);
+    String description = json['description']?.toString() ?? '';
+    // The backend now sends an explicit 'type' field for all transactions.
+    final rawType = json['type']?.toString() ?? '';
+
+    String type;
+    double amount;
+
+    if (rawType == 'credit_sale') {
+      type   = 'credit_sale';
+      amount = debit > 0 ? debit : parseDouble(json['pendingAmount'] ?? json['grandTotal']);
+    } else if (rawType == 'opening_balance' || description.toLowerCase().contains('opening balance')) {
+      type   = 'opening_balance';
       amount = debit;
-    } else if (debit > 0) {
-      type = 'delivery';
-      amount = debit;
-    } else if (credit > 0) {
-      type = 'payment';
+    } else if (rawType == 'payment' || (rawType.isEmpty && credit > 0)) {
+      type   = 'payment';
       amount = credit;
+    } else {
+      // delivery (or any other debit)
+      type   = 'delivery';
+      amount = debit;
     }
 
     return StatementTransaction(
@@ -55,8 +83,11 @@ class StatementTransaction {
       type: type,
       description: description,
       amount: amount,
-      balance: (json['balance'] is num) ? (json['balance'] as num).toDouble() : double.tryParse(json['balance']?.toString() ?? '0') ?? 0.0,
+      balance: parseDouble(json['balance']),
       items: (json['items'] as List?)?.map((i) => StatementItem.fromJson(i as Map<String, dynamic>)).toList() ?? [],
+      grandTotal: parseDouble(json['grandTotal'] ?? json['totalAmount']),
+      paymentReceived: parseDouble(json['paymentReceived']),
+      pendingAmount: parseDouble(json['pendingAmount']),
     );
   }
 }
@@ -138,7 +169,7 @@ class CustomerStatementModel {
     double totalPayments = 0.0;
 
     for (var tx in transactions) {
-      if (tx.type == 'delivery') {
+      if (tx.type == 'delivery' || tx.type == 'credit_sale') {
         totalDeliveries += tx.amount;
       } else if (tx.type == 'payment') {
         totalPayments += tx.amount;

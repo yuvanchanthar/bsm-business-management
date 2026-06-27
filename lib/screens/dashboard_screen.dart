@@ -19,6 +19,7 @@ import 'delivery_list_screen.dart';
 import 'supplier_screen.dart';
 import 'supplier_detail_screen.dart';
 import 'settings_screen.dart';
+import 'credit_sale_screen.dart';
 import '../widgets/notification_bell.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -299,6 +300,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           builder: (_) => const InventoryListScreen(),
                         ),
                       ).then((_) => _fetchDashboardStats());
+                    },
+                  ),
+                  _QuickAccessCard(
+                    label: 'Credit Sales',
+                    icon: Icons.receipt_long_outlined,
+                    color: Colors.indigo,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CreditSaleScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],

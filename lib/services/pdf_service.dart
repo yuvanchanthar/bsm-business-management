@@ -588,39 +588,81 @@ class PdfService {
               ...statement.transactions.asMap().entries.map((entry) {
                 final idx = entry.key;
                 final t = entry.value;
-                final isOpening = t.type == 'opening_balance';
-                final isDebit = t.type == 'delivery' || t.type == 'invoice' || isOpening;
+                final isOpening    = t.type == 'opening_balance';
+                final isCreditSale = t.type == 'credit_sale';
+                final isDebit  = t.type == 'delivery' || t.type == 'invoice' || isOpening || isCreditSale;
                 final isCredit = t.type == 'payment';
-                
-                final debitStr = isDebit && t.amount > 0 ? '₹${t.amount.toStringAsFixed(2)}' : '-';
+
+                final debitStr  = isDebit  && t.amount > 0 ? '₹${t.amount.toStringAsFixed(2)}' : '-';
                 final creditStr = isCredit && t.amount > 0 ? '₹${t.amount.toStringAsFixed(2)}' : '-';
-                
+
+                // Build description label
+                final String mainDesc = isCreditSale ? 'Credit Sale' : t.description;
                 pw.Widget descWidget;
-                if (t.items.isNotEmpty) {
+                if (t.items.isNotEmpty || isCreditSale) {
                   descWidget = pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text(t.description, style: pw.TextStyle(fontSize: 9, fontWeight: isOpening ? pw.FontWeight.bold : null)),
+                      pw.Text(mainDesc, style: pw.TextStyle(fontSize: 9, fontWeight: isOpening ? pw.FontWeight.bold : null)),
                       pw.SizedBox(height: 4),
                       pw.Padding(
                         padding: const pw.EdgeInsets.only(left: 8),
                         child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: t.items.map((item) {
-                            String qtyStr = item.quantity.truncateToDouble() == item.quantity 
-                                ? item.quantity.toInt().toString() 
-                                : item.quantity.toStringAsFixed(1);
-                            return pw.Padding(
-                              padding: const pw.EdgeInsets.only(bottom: 2),
-                              child: pw.Text('• ${item.name} (Qty: $qtyStr)', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                            );
-                          }).toList(),
-                        ),
+  crossAxisAlignment: pw.CrossAxisAlignment.start,
+  children: [
+    ...t.items.map((item) {
+      String qtyStr = item.quantity.truncateToDouble() == item.quantity
+          ? item.quantity.toInt().toString()
+          : item.quantity.toStringAsFixed(1);
+
+      return pw.Padding(
+        padding: const pw.EdgeInsets.only(bottom: 2),
+        child: pw.Text(
+          '• ${item.name} (Qty: $qtyStr)',
+          style: pw.TextStyle(
+            fontSize: 8,
+            color: PdfColors.grey700,
+          ),
+        ),
+      );
+    }),
+
+    if (isCreditSale) ...[
+      pw.SizedBox(height: 3),
+
+      pw.Text(
+        'Purchase : ₹${t.grandTotal.toStringAsFixed(0)}',
+        style: pw.TextStyle(
+          fontSize: 8,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+
+      pw.Text(
+        'Paid : ₹${t.paymentReceived.toStringAsFixed(0)}',
+        style: pw.TextStyle(
+          fontSize: 8,
+          color: PdfColors.green700,
+        ),
+      ),
+
+      pw.Text(
+        'Balance : ₹${t.pendingAmount.toStringAsFixed(0)}',
+        style: pw.TextStyle(
+          fontSize: 8,
+          color: PdfColors.red700,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    ]
+  ],
+),
+                       
                       ),
                     ]
                   );
                 } else {
-                  descWidget = pw.Text(t.description, style: pw.TextStyle(fontSize: 9, fontWeight: isOpening ? pw.FontWeight.bold : null));
+                  descWidget = pw.Text(mainDesc, style: pw.TextStyle(fontSize: 9, fontWeight: isOpening ? pw.FontWeight.bold : null));
                 }
 
                 return pw.TableRow(
