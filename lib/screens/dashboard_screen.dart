@@ -74,7 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final api = await _ensureApiService();
       final stats = await api.getDashboardStats();
-      
+
       final ts = await TokenService.getInstance();
       final supplierService = SupplierService(ts);
       final lowStock = await supplierService.getLowStockAlerts();
@@ -122,7 +122,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               backgroundColor: AppColors.primaryGreen,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Logout', style: GoogleFonts.inter()),
@@ -186,7 +187,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: AppColors.textSecondary,
+            ),
             tooltip: 'Settings',
             onPressed: () => Navigator.push(
               context,
@@ -195,7 +199,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const NotificationBell(),
           IconButton(
-            icon: const Icon(Icons.logout_rounded, color: AppColors.textSecondary),
+            icon: const Icon(
+              Icons.logout_rounded,
+              color: AppColors.textSecondary,
+            ),
             tooltip: 'Logout',
             onPressed: () => _handleLogout(context),
           ),
@@ -237,7 +244,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 mainAxisSpacing: 16,
                 childAspectRatio: 1.3,
                 children: [
-                   _QuickAccessCard(
+                  _QuickAccessCard(
                     label: 'Customers',
                     icon: Icons.people_alt_outlined,
                     color: Colors.blue,
@@ -270,9 +277,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const LabourScreen(),
-                        ),
+                        MaterialPageRoute(builder: (_) => const LabourScreen()),
                       ).then((_) => _fetchDashboardStats());
                     },
                   ),
@@ -320,7 +325,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 24),
 
               if (_isLoading)
-                const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen))
+                const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primaryGreen,
+                  ),
+                )
               else if (_error != null)
                 Center(
                   child: Text(
@@ -344,7 +353,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: StatCard(
                         title: 'Advance Pay',
-                        value: '₹${_stats.advancePaymentsAmount.toStringAsFixed(0)}',
+                        value:
+                            '₹${_stats.advancePaymentsAmount.toStringAsFixed(0)}',
                         icon: Icons.account_balance_wallet_outlined,
                         color: const Color(0xFFE8F5E9), // Light Green
                       ),
@@ -367,7 +377,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: StatCard(
                         title: 'PENDING PAYMENTS',
-                        value: '₹${_stats.pendingPaymentsAmount.toStringAsFixed(0)}',
+                        value:
+                            '₹${_stats.pendingPaymentsAmount.toStringAsFixed(0)}',
                         badgeText: '${_stats.pendingPaymentsCount} Cust.',
                         color: const Color(0xFFFFEBEE), // Light Red for pending
                         icon: Icons.payments_outlined,
@@ -377,8 +388,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Expanded(
                       child: StatCard(
                         title: 'Total Delivered',
-                        value: '₹${(_stats.totalDeliveredAmount/1000).toStringAsFixed(1)}K',
+                        value:
+                            '₹${(_stats.totalDeliveredAmount / 1000).toStringAsFixed(1)}K',
                         icon: Icons.timeline,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: StatCard(
+                        title: 'Total Credit Sales',
+                        value:
+                            '₹${(_stats.totalCreditSalesAmount / 1000).toStringAsFixed(1)}K',
+                        icon: Icons.receipt_long_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: StatCard(
+                        title: 'Total Business',
+                        value:
+                            '₹${(_stats.totalBusinessAmount / 1000).toStringAsFixed(1)}K',
+                        icon: Icons.analytics_outlined,
                       ),
                     ),
                   ],
@@ -407,8 +441,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           color: const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.people_outline,
-                            color: Color(0xFFC62828), size: 24),
+                        child: const Icon(
+                          Icons.people_outline,
+                          color: Color(0xFFC62828),
+                          size: 24,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -434,7 +471,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: AppColors.textHint),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.textHint,
+                      ),
                     ],
                   ),
                 ),
@@ -450,10 +490,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ..._lowStockAlerts.map((alert) => _buildLowStockAlertCard(alert)),
+                  ..._lowStockAlerts.map(
+                    (alert) => _buildLowStockAlertCard(alert),
+                  ),
                 ],
 
-                if (_stats.supplierUpcomingDue.isNotEmpty || _stats.supplierOverdue.isNotEmpty) ...[
+                if (_stats.supplierUpcomingDue.isNotEmpty ||
+                    _stats.supplierOverdue.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   Text(
                     'Supplier Due Alerts',
@@ -464,8 +507,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  ..._stats.supplierOverdue.map((alert) => _buildSupplierAlertCard(alert, isOverdue: true)),
-                  ..._stats.supplierUpcomingDue.map((alert) => _buildSupplierAlertCard(alert, isOverdue: false)),
+                  ..._stats.supplierOverdue.map(
+                    (alert) => _buildSupplierAlertCard(alert, isOverdue: true),
+                  ),
+                  ..._stats.supplierUpcomingDue.map(
+                    (alert) => _buildSupplierAlertCard(alert, isOverdue: false),
+                  ),
                 ],
 
                 const SizedBox(height: 24),
@@ -473,20 +520,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (_stats.monthlyRevenue.any((r) => r > 0)) ...[
                   Text(
                     'Monthly Revenue',
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   _buildRevenueChart(),
                 ],
-                
+
                 const SizedBox(height: 24),
                 if (_stats.mostPendingCustomers.isNotEmpty) ...[
                   Text(
                     'Top Pending Customers',
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  ..._stats.mostPendingCustomers.map((c) => _buildPendingCustomerCard(c)),
+                  ..._stats.mostPendingCustomers.map(
+                    (c) => _buildPendingCustomerCard(c),
+                  ),
                 ],
               ],
               const SizedBox(height: 24),
@@ -556,7 +613,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: BarChart(
@@ -565,18 +626,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderData: FlBorderData(show: false),
           gridData: const FlGridData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 getTitlesWidget: (value, meta) {
-                  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                  const months = [
+                    'Jan',
+                    'Feb',
+                    'Mar',
+                    'Apr',
+                    'May',
+                    'Jun',
+                    'Jul',
+                    'Aug',
+                    'Sep',
+                    'Oct',
+                    'Nov',
+                    'Dec',
+                  ];
                   if (value >= 0 && value < 12) {
                     return Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(months[value.toInt()], style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary)),
+                      child: Text(
+                        months[value.toInt()],
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                     );
                   }
                   return const SizedBox();
@@ -593,7 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: AppColors.primaryGreen,
                   width: 16,
                   borderRadius: BorderRadius.circular(4),
-                )
+                ),
               ],
             );
           }).toList(),
@@ -602,10 +688,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildSupplierAlertCard(SupplierDueAlert alert, {required bool isOverdue}) {
+  Widget _buildSupplierAlertCard(
+    SupplierDueAlert alert, {
+    required bool isOverdue,
+  }) {
     final color = isOverdue ? Colors.red : Colors.orange;
     String alertText = '';
-    
+
     final today = DateTime.now();
     final todayMidnight = DateTime(today.year, today.month, today.day);
     final due = DateTime.tryParse(alert.dueDate);
@@ -614,7 +703,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final diff = dueMidnight.difference(todayMidnight).inDays;
       if (diff < 0) {
         final days = diff.abs();
-        alertText = '${alert.supplierName} overdue by $days day${days > 1 ? "s" : ""}';
+        alertText =
+            '${alert.supplierName} overdue by $days day${days > 1 ? "s" : ""}';
       } else if (diff == 1) {
         alertText = '${alert.supplierName} payment due tomorrow';
       } else if (diff == 0) {
@@ -695,11 +785,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
-            child: Text(customer.name, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            child: Text(
+              customer.name,
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
           Text(
             '₹${customer.balance.toStringAsFixed(0)}',
-            style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.red),
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.bold,
+              color: Colors.red,
+            ),
           ),
         ],
       ),
@@ -780,7 +879,8 @@ class _QuickAccessCard extends StatefulWidget {
   State<_QuickAccessCard> createState() => _QuickAccessCardState();
 }
 
-class _QuickAccessCardState extends State<_QuickAccessCard> with SingleTickerProviderStateMixin {
+class _QuickAccessCardState extends State<_QuickAccessCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -791,9 +891,10 @@ class _QuickAccessCardState extends State<_QuickAccessCard> with SingleTickerPro
       vsync: this,
       duration: const Duration(milliseconds: 100),
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.95,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -845,11 +946,7 @@ class _QuickAccessCardState extends State<_QuickAccessCard> with SingleTickerPro
                   color: widget.color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  widget.icon,
-                  color: widget.color,
-                  size: 28,
-                ),
+                child: Icon(widget.icon, color: widget.color, size: 28),
               ),
               const SizedBox(height: 12),
               Text(

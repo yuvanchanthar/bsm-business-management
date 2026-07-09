@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../core/app_colors.dart';
 import '../models/ledger_model.dart';
+import '../models/customer_model.dart';
 import '../models/payment_model.dart';
+import '../models/inventory_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import '../services/sms_settings_service.dart';
@@ -17,6 +19,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:flutter/services.dart';
 import 'delivery_detail_screen.dart';
 import 'credit_sale_detail_screen.dart';
+import 'credit_sale_screen.dart';
 import 'customer_statement_screen.dart';
 
 // Simple DTO to keep SliverList builder clean.
@@ -716,42 +719,229 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  // ── Edit Credit Sale ────────────────────────────────────────────────────────
+
+  Future<void> _handleEditCreditSale(LedgerEntry entry) async {
+    final saleId = entry.id;
+    if (saleId == null || saleId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Sale ID missing'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // Show loading indicator while fetching sale data
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen)),
+    );
+
+    try {
+      final saleData = await _apiService.getCreditSaleById(saleId);
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+
+      // Build customer from existing ledger (used for display only in edit mode)
+      final customer = _ledger!.customer;
+      final prefilledCustomer = CustomerModel(
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone,
+        address: '',
+        balance: customer.balance,
+        openingBalance: customer.openingBalance,
+        creditLimit: customer.creditLimit,
+        pendingDays: customer.pendingDays,
+      );
+
+      // Reconstruct products from sale items
+      final rawItems = saleData['items'] as List? ?? [];
+      final prefilledProducts = rawItems.map((item) {
+        final m = Map<String, dynamic>.from(item as Map);
+        double parseD(dynamic v) {
+          if (v == null) return 0.0;
+          if (v is num) return v.toDouble();
+          return double.tryParse(v.toString()) ?? 0.0;
+        }
+        final name = m['itemName']?.toString() ?? m['product']?.toString() ?? '';
+        final qty = parseD(m['quantity'] ?? m['qty']);
+        final unit = m['unit']?.toString() ?? 'Bag';
+        final price = parseD(m['price']);
+        final inventoryId = m['inventoryId']?.toString() ?? m['_id']?.toString() ?? '';
+
+        // Create a minimal InventoryItemModel stub so the dropdown shows the name
+        final stub = InventoryItemModel(
+          id: inventoryId,
+          itemName: name,
+          currentStock: 9999, // non-blocking for edit mode
+          unit: unit,
+          threshold: 0,
+          category: null,
+        );
+        return CreditSaleProduct(
+          item: stub,
+          quantity: qty,
+          price: price,
+          selectedUnit: unit,
+        );
+      }).toList();
+
+      final paymentReceived = (saleData['paymentReceived'] is num)
+          ? (saleData['paymentReceived'] as num).toDouble()
+          : double.tryParse(saleData['paymentReceived']?.toString() ?? '0') ?? 0.0;
+
+      // Backward-compatible: default to 0 if backend doesn't return this field yet.
+      final outstandingPayment = (saleData['outstandingPayment'] is num)
+          ? (saleData['outstandingPayment'] as num).toDouble()
+          : double.tryParse(saleData['outstandingPayment']?.toString() ?? '0') ?? 0.0;
+
+      final notes = saleData['notes']?.toString() ?? '';
+
+      final result = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CreditSaleScreen(
+            editMode: true,
+            saleId: saleId,
+            prefilledCustomer: prefilledCustomer,
+            prefilledProducts: prefilledProducts,
+            prefilledPaymentReceived: paymentReceived,
+            prefilledOutstandingPayment: outstandingPayment,
+            prefilledNotes: notes,
+          ),
+        ),
+      );
+
+      if (result == true && mounted) {
+        _dataChanged = true;
+        await _fetchLedger();
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to load sale: ${e.toString().replaceAll("Exception: ", "")}'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+  }
+
+  // ── Delete Credit Sale ──────────────────────────────────────────────────────
+
+  Future<void> _handleDeleteCreditSale(LedgerEntry entry) async {
+    final saleId = entry.id;
+    if (saleId == null || saleId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Sale ID missing'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    bool isDeleting = false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.delete_outline, color: Colors.red, size: 24),
+              const SizedBox(width: 10),
+              Text('Delete Credit Sale?',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18)),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to delete this Credit Sale? This action cannot be undone.',
+            style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isDeleting ? null : () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                disabledBackgroundColor: Colors.grey.withValues(alpha: 0.5),
+              ),
+              onPressed: isDeleting
+                  ? null
+                  : () async {
+                      setDialogState(() => isDeleting = true);
+                      try {
+                        await _apiService.deleteCreditSale(saleId);
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          setDialogState(() => isDeleting = false);
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            content: Text(e.toString().replaceAll('Exception: ', '')),
+                            backgroundColor: Colors.red,
+                          ));
+                        }
+                      }
+                    },
+              child: isDeleting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text('Delete', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      _dataChanged = true;
+      await _fetchLedger();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Credit Sale deleted successfully'),
+        backgroundColor: Colors.green,
+      ));
+    }
+  }
+
   Widget _buildLedgerRow(LedgerEntry t, double bal) {
     final isDelivery = t.type == LedgerEntryType.delivery;
-final isCreditSale = t.type == LedgerEntryType.creditSale;
-final isOpeningBalance = t.type == LedgerEntryType.openingBalance;
-final isPayment = t.type == LedgerEntryType.payment;
-   
-    // Colour scheme:
-    //   Opening Balance → Amber  (it's an initial debt, not a new delivery)
-    //   Delivery        → Orange-Red  (debit)
-    //   Payment         → Green  (credit)
+    final isCreditSale = t.type == LedgerEntryType.creditSale;
+    final isOpeningBalance = t.type == LedgerEntryType.openingBalance;
+    final isPayment = t.type == LedgerEntryType.payment;
+
     final Color amountColor =
-    isOpeningBalance
-        ? Colors.amber.shade800
-        : isDelivery
-            ? const Color(0xFFE64A19)
-            : isCreditSale
-                ? Colors.deepPurple
-                : const Color(0xFF2E7D32);
+        isOpeningBalance
+            ? Colors.amber.shade800
+            : isDelivery
+                ? const Color(0xFFE64A19)
+                : isCreditSale
+                    ? Colors.deepPurple
+                    : const Color(0xFF2E7D32);
 
     final IconData rowIcon =
-    isOpeningBalance
-        ? Icons.account_balance_wallet_outlined
-        : isDelivery
-            ? Icons.local_shipping_outlined
-            : isCreditSale
-                ? Icons.shopping_cart_checkout
-                : Icons.payments_outlined;
+        isOpeningBalance
+            ? Icons.account_balance_wallet_outlined
+            : isDelivery
+                ? Icons.local_shipping_outlined
+                : isCreditSale
+                    ? Icons.shopping_cart_checkout
+                    : Icons.payments_outlined;
 
     final String rowLabel =
-    isOpeningBalance
-        ? 'Opening Balance'
-        : isDelivery
-            ? 'Delivery'
-            : isCreditSale
-                ? 'Credit Sale'
-                : 'Payment';
+        isOpeningBalance
+            ? 'Opening Balance'
+            : isDelivery
+                ? 'Delivery'
+                : isCreditSale
+                    ? 'Credit Sale'
+                    : 'Payment';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -768,12 +958,10 @@ final isPayment = t.type == LedgerEntryType.payment;
       ),
       child: Material(
         color: isOpeningBalance
-    ? Colors.amber.withValues(alpha: 0.06)
-    : isCreditSale
-        ? Colors.deepPurple.withValues(alpha: 0.05)
-        : Colors.white,
-       
-            
+            ? Colors.amber.withValues(alpha: 0.06)
+            : isCreditSale
+                ? Colors.deepPurple.withValues(alpha: 0.05)
+                : Colors.white,
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -844,7 +1032,7 @@ final isPayment = t.type == LedgerEntryType.payment;
                   ),
                 ),
 
-                // Amount
+                // Amount + optional popup menu for creditSale
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -863,6 +1051,44 @@ final isPayment = t.type == LedgerEntryType.payment;
                         style: GoogleFonts.inter(fontSize: 10, color: AppColors.textHint),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    // ── Popup menu: only for Credit Sale entries ──
+                    if (isCreditSale) ...[
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        height: 28,
+                        width: 28,
+                        child: PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.more_vert, size: 18, color: AppColors.textSecondary),
+                          onSelected: (value) {
+                            if (value == 'edit') _handleEditCreditSale(t);
+                            if (value == 'delete') _handleDeleteCreditSale(t);
+                          },
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.edit_outlined, size: 18, color: Colors.blueAccent),
+                                  const SizedBox(width: 10),
+                                  Text('Edit', style: GoogleFonts.inter(fontSize: 14)),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                  const SizedBox(width: 10),
+                                  Text('Delete', style: GoogleFonts.inter(fontSize: 14, color: Colors.red)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ],

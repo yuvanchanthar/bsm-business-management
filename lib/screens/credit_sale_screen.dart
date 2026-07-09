@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../models/customer_model.dart';
 import '../models/inventory_model.dart';
+import '../models/payment_model.dart';
 import '../services/api_service.dart';
 import '../services/supplier_service.dart';
 import '../services/token_service.dart';
@@ -12,12 +13,31 @@ class CreditSaleProduct {
   InventoryItemModel? item;
   double quantity;
   double price;
-  CreditSaleProduct({this.item, this.quantity = 0, this.price = 0});
+  String selectedUnit;
+  CreditSaleProduct({this.item, this.quantity = 0, this.price = 0, this.selectedUnit = 'Bag'});
   double get total => quantity * price;
 }
 
 class CreditSaleScreen extends StatefulWidget {
-  const CreditSaleScreen({super.key});
+  final bool editMode;
+  final String? saleId;
+  final CustomerModel? prefilledCustomer;
+  final List<CreditSaleProduct>? prefilledProducts;
+  final double? prefilledPaymentReceived;
+  final String? prefilledNotes;
+  final double? prefilledOutstandingPayment;
+
+  const CreditSaleScreen({
+    super.key,
+    this.editMode = false,
+    this.saleId,
+    this.prefilledCustomer,
+    this.prefilledProducts,
+    this.prefilledPaymentReceived,
+    this.prefilledNotes,
+    this.prefilledOutstandingPayment,
+  });
+
   @override
   State<CreditSaleScreen> createState() => _CreditSaleScreenState();
 }
@@ -44,6 +64,8 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
   final List<CreditSaleProduct> _products = [CreditSaleProduct()];
   double _paymentReceived = 0;
   final _paymentReceivedCtrl = TextEditingController(text: '0');
+  double _outstandingPayment = 0;
+  final _outstandingPaymentCtrl = TextEditingController(text: '0');
   final _notesCtrl = TextEditingController();
 
   // ── Computed ────────────────────────────────────────────────────────────────
@@ -51,11 +73,34 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
   double get _currentSalePending => (_grandTotal - _paymentReceived).clamp(0, double.infinity);
   double get _prevBalance => _selectedCustomer?.balance ?? 0;
   double get _newTotalBalance => _prevBalance + _currentSalePending;
+  /// Current Outstanding = prevBalance + pendingAmount - outstandingPayment
+  double get _currentOutstanding => _prevBalance + _currentSalePending - _outstandingPayment;
 
   @override
   void initState() {
     super.initState();
     _supplierService = SupplierService(TokenService.instance);
+    // Pre-fill in edit mode
+    if (widget.editMode && widget.prefilledCustomer != null) {
+      _selectedCustomer = widget.prefilledCustomer;
+      _selectedCustomerName = widget.prefilledCustomer!.name;
+      _customerSearchController.text = widget.prefilledCustomer!.name;
+    }
+    if (widget.editMode && widget.prefilledProducts != null && widget.prefilledProducts!.isNotEmpty) {
+      _products.clear();
+      _products.addAll(widget.prefilledProducts!);
+    }
+    if (widget.editMode && widget.prefilledPaymentReceived != null) {
+      _paymentReceived = widget.prefilledPaymentReceived!;
+      _paymentReceivedCtrl.text = widget.prefilledPaymentReceived!.toStringAsFixed(0);
+    }
+    if (widget.editMode && widget.prefilledOutstandingPayment != null) {
+      _outstandingPayment = widget.prefilledOutstandingPayment!;
+      _outstandingPaymentCtrl.text = widget.prefilledOutstandingPayment!.toStringAsFixed(0);
+    }
+    if (widget.editMode && widget.prefilledNotes != null) {
+      _notesCtrl.text = widget.prefilledNotes!;
+    }
     _fetchCustomers();
     _fetchInventory();
   }
@@ -80,6 +125,19 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       if (mounted) {
         setState(() {
           _inventoryItems = items;
+          
+          if (widget.editMode) {
+            for (var p in _products) {
+              if (p.item != null) {
+                try {
+                  p.item = _inventoryItems.firstWhere((item) => item.id == p.item!.id);
+                } catch (e) {
+                  // Keep stub if not found
+                }
+              }
+            }
+          }
+          
           _isLoadingInventory = false;
         });
       }
@@ -112,6 +170,7 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
   @override
   void dispose() {
     _paymentReceivedCtrl.dispose();
+    _outstandingPaymentCtrl.dispose();
     _notesCtrl.dispose();
     _customerSearchController.dispose();
     super.dispose();
@@ -128,11 +187,10 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a valid customer.')));
       return;
     }
-    
-    // Check if there is an empty product
+
     if (_products.any((p) => p.item == null || p.quantity <= 0)) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all product details with quantity > 0.')));
-       return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all product details with quantity > 0.')));
+      return;
     }
 
     if (_paymentReceived > _grandTotal) {
@@ -143,24 +201,45 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       return;
     }
 
-    // Check duplicate products
+    // ── Outstanding Payment validation ───────────────────────────────────────
+    if (_outstandingPayment < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Outstanding Payment cannot be negative.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+    final maxOutstanding = _prevBalance + _currentSalePending;
+    if (_outstandingPayment > maxOutstanding) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Outstanding Payment (₹${_outstandingPayment.toStringAsFixed(0)}) cannot exceed '
+          'Previous Balance + Pending Amount (₹${maxOutstanding.toStringAsFixed(0)}).'
+        ),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
     final itemIds = _products.map((p) => p.item!.id).toSet();
     if (itemIds.length < _products.length) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Duplicate products are not allowed.'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
-    // Validate stock
-    for (var p in _products) {
-      if (p.quantity > p.item!.currentStock) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Insufficient stock for ${p.item!.itemName}. Available: ${p.item!.currentStock}'),
-          backgroundColor: Colors.red,
-        ));
-        return;
+    // Stock validation — skip in edit mode (backend handles delta)
+    if (!widget.editMode) {
+      for (var p in _products) {
+        if (p.quantity > p.item!.currentStock) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Insufficient stock for ${p.item!.itemName}. Available: ${p.item!.currentStock}'),
+            backgroundColor: Colors.red,
+          ));
+          return;
+        }
       }
     }
 
@@ -168,29 +247,98 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
 
     try {
       final payload = {
-  'customerId': _selectedCustomer!.id,
-  'items': _products.map((p) => {
-    'inventoryId': p.item!.id,
-    'itemName': p.item!.itemName,
-    'quantity': p.quantity,
-    'unit': p.item!.unit,
-    'price': p.price,
-    'total': p.total,
-  }).toList(),
-  'grandTotal': _grandTotal,
-  'paymentReceived': _paymentReceived,
-  'notes': _notesCtrl.text.trim(),
-};
-      
+        'customerId': _selectedCustomer!.id,
+        'items': _products.map((p) => {
+          'inventoryId': p.item!.id,
+          'itemName': p.item!.itemName,
+          'quantity': p.quantity,
+          'unit': p.selectedUnit,
+          'price': p.price,
+          'total': p.total,
+        }).toList(),
+        'grandTotal': _grandTotal,
+        'paymentReceived': _paymentReceived,
+        'notes': _notesCtrl.text.trim(),
+      };
 
-      final response = await _apiService.createCreditSale(payload);
+      bool paymentFailed = false;
+      String paymentErrorMsg = '';
 
-      if (mounted) {
-        setState(() => _isSaving = false);
-        // Navigate to invoice preview
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => CreditInvoicePreviewScreen(
-          invoiceData: response,
-        )));
+      if (widget.editMode && widget.saleId != null) {
+        // ── Edit mode: PUT /sales/:id ────────────────────────────────────────
+        await _apiService.updateCreditSale(widget.saleId!, payload);
+        
+        if (_outstandingPayment > 0) {
+          try {
+            await _apiService.addCustomerPayment(PaymentModel(
+              customerId: _selectedCustomer!.id,
+              name: _selectedCustomer!.name,
+              amount: _outstandingPayment,
+              date: DateTime.now(),
+              note: 'Outstanding payment received during Credit Sale',
+            ));
+          } catch (e) {
+            paymentFailed = true;
+            paymentErrorMsg = e.toString().replaceAll('Exception: ', '');
+          }
+        }
+
+        if (mounted) {
+          setState(() => _isSaving = false);
+          if (paymentFailed) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Credit Sale updated, but Payment failed: $paymentErrorMsg'),
+              backgroundColor: Colors.orange,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Credit Sale updated successfully'),
+              backgroundColor: Colors.green,
+            ));
+          }
+          Navigator.pop(context, true); // signal ledger to refresh
+        }
+      } else {
+        // ── Create mode: POST /sales ─────────────────────────────────────────
+        final response = await _apiService.createCreditSale(payload);
+        final sale = await _apiService.getCreditSaleById(response['saleId'].toString());
+        sale['outstandingPayment'] = _outstandingPayment;
+        
+        if (_outstandingPayment > 0) {
+          try {
+            await _apiService.addCustomerPayment(PaymentModel(
+              customerId: _selectedCustomer!.id,
+              name: _selectedCustomer!.name,
+              amount: _outstandingPayment,
+              date: DateTime.now(),
+              note: 'Outstanding payment received during Credit Sale',
+            ));
+          } catch (e) {
+            paymentFailed = true;
+            paymentErrorMsg = e.toString().replaceAll('Exception: ', '');
+          }
+        }
+
+        if (mounted) {
+          setState(() => _isSaving = false);
+          if (paymentFailed) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Credit Sale created, but Payment failed: $paymentErrorMsg'),
+              backgroundColor: Colors.orange,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(_outstandingPayment > 0 ? 'Credit Sale and Payment recorded successfully' : 'Credit Sale created successfully'),
+              backgroundColor: Colors.green,
+            ));
+          }
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CreditInvoicePreviewScreen(invoiceData: sale),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -224,8 +372,10 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
             child: const Icon(Icons.receipt_long, color: _green, size: 20),
           ),
           const SizedBox(width: 10),
-          Text('Credit Sale', style: GoogleFonts.inter(
-            fontSize: 20, fontWeight: FontWeight.bold, color: _green)),
+          Text(
+            widget.editMode ? 'Edit Credit Sale' : 'Credit Sale',
+            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: _green),
+          ),
         ]),
       ),
       body: Stack(
@@ -283,8 +433,12 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
                   currentSalePending: _currentSalePending,
                   prevBalance: _prevBalance,
                   newTotalBalance: _newTotalBalance,
+                  outstandingPayment: _outstandingPayment,
+                  currentOutstanding: _currentOutstanding,
                   paymentReceivedCtrl: _paymentReceivedCtrl,
+                  outstandingPaymentCtrl: _outstandingPaymentCtrl,
                   onPaymentChanged: (v) => setState(() => _paymentReceived = double.tryParse(v) ?? 0),
+                  onOutstandingChanged: (v) => setState(() => _outstandingPayment = (double.tryParse(v) ?? 0).clamp(0, double.infinity)),
                 ),
                 const SizedBox(height: 16),
                 _sectionLabel('Notes (Optional)'),
@@ -336,6 +490,7 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       ),
       bottomNavigationBar: _BottomActions(
         onSave: _isSaving ? null : _handleSave,
+        editMode: widget.editMode,
       ),
     );
   }
@@ -345,21 +500,25 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: widget.editMode ? Colors.grey.shade100 : Colors.white,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
             border: Border.all(color: _selectedCustomer != null ? AppColors.primaryGreen.withValues(alpha: 0.4) : AppColors.border),
           ),
           child: TextField(
             controller: _customerSearchController,
+            readOnly: widget.editMode, // locked in edit mode
             decoration: InputDecoration(
               hintText: _isFetchingCustomers ? 'Loading customers...' : 'Search customer by name or phone...',
               hintStyle: GoogleFonts.inter(color: AppColors.textSecondary),
-              prefixIcon: const Icon(Icons.search, color: AppColors.primaryGreen),
+              prefixIcon: Icon(
+                widget.editMode ? Icons.lock_outline : Icons.search,
+                color: widget.editMode ? AppColors.textSecondary : AppColors.primaryGreen,
+              ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             ),
-            onChanged: _onCustomerSearchChanged,
+            onChanged: widget.editMode ? null : _onCustomerSearchChanged,
           ),
         ),
         if (_showSuggestions)
@@ -591,12 +750,11 @@ class _ProductRowState extends State<_ProductRow> {
         ],
         const SizedBox(height: 10),
         Row(children: [
-          Expanded(child: TextFormField(
+          Expanded(flex: 3, child: TextFormField(
             controller: _qtyCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               labelText: 'Quantity',
-              suffixText: p.item?.unit ?? '',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -604,7 +762,28 @@ class _ProductRowState extends State<_ProductRow> {
             onChanged: (v) { p.quantity = double.tryParse(v) ?? 0; widget.onChanged(); },
           )),
           const SizedBox(width: 10),
-          Expanded(child: TextFormField(
+          Expanded(flex: 3, child: DropdownButtonFormField<String>(
+            value: p.selectedUnit,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Unit',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: ['Bag', 'KG'].map((u) => DropdownMenuItem(
+              value: u,
+              child: Text(u, style: GoogleFonts.inter(fontSize: 13)),
+            )).toList(),
+            onChanged: (v) {
+              if (v != null) {
+                setState(() { p.selectedUnit = v; });
+                widget.onChanged();
+              }
+            },
+          )),
+          const SizedBox(width: 10),
+          Expanded(flex: 4, child: TextFormField(
             controller: _priceCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
@@ -639,21 +818,29 @@ class _ProductRowState extends State<_ProductRow> {
 
 class _SaleSummaryCard extends StatelessWidget {
   final double grandTotal, paymentReceived, currentSalePending, prevBalance, newTotalBalance;
+  final double outstandingPayment, currentOutstanding;
   final TextEditingController paymentReceivedCtrl;
+  final TextEditingController outstandingPaymentCtrl;
   final ValueChanged<String> onPaymentChanged;
-  
+  final ValueChanged<String> onOutstandingChanged;
+
   const _SaleSummaryCard({
-    required this.grandTotal, 
-    required this.paymentReceived, 
+    required this.grandTotal,
+    required this.paymentReceived,
     required this.currentSalePending,
-    required this.prevBalance, 
+    required this.prevBalance,
     required this.newTotalBalance,
-    required this.paymentReceivedCtrl, 
+    required this.outstandingPayment,
+    required this.currentOutstanding,
+    required this.paymentReceivedCtrl,
+    required this.outstandingPaymentCtrl,
     required this.onPaymentChanged,
+    required this.onOutstandingChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bool hasOutstanding = outstandingPayment > 0 || prevBalance > 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -661,8 +848,11 @@ class _SaleSummaryCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(children: [
+        // ── Grand Total ──────────────────────────────────────────────────────
         _Row('Grand Total', '₹${grandTotal.toStringAsFixed(2)}', AppColors.textPrimary),
         const SizedBox(height: 10),
+
+        // ── Payment Received ─────────────────────────────────────────────────
         Row(children: [
           Text('Payment Received', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
           const Spacer(),
@@ -681,8 +871,12 @@ class _SaleSummaryCard extends StatelessWidget {
           )),
         ]),
         const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider()),
-        _Row('Current Sale Pending', '₹${currentSalePending.toStringAsFixed(2)}', AppColors.primaryGreen, bold: true, large: true),
+
+        // ── Pending Amount ───────────────────────────────────────────────────
+        _Row('Pending Amount', '₹${currentSalePending.toStringAsFixed(2)}', AppColors.primaryGreen, bold: true, large: true),
         const SizedBox(height: 10),
+
+        // ── Previous Balance preview (compact) ───────────────────────────────
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -701,8 +895,99 @@ class _SaleSummaryCard extends StatelessWidget {
               newTotalBalance > 0 ? Colors.red : AppColors.primaryGreen, bold: true, large: true),
           ]),
         ),
+
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 12),
+
+        // ── Outstanding Payment field ─────────────────────────────────────────
+        Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                'Outstanding Payment',
+                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Enter amount paid towards previous balance',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(width: 120, child: TextFormField(
+            controller: outstandingPaymentCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textAlign: TextAlign.end,
+            decoration: InputDecoration(
+              prefixText: '₹',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.deepPurple),
+            onChanged: onOutstandingChanged,
+          )),
+        ]),
+
+        // ── Current Outstanding preview ───────────────────────────────────────
+        if (hasOutstanding) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.2)),
+            ),
+            child: Column(children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Current Outstanding', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.deepPurple, letterSpacing: 0.4)),
+                  const SizedBox(),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _OutstandingRow(label: 'Previous Balance', value: prevBalance, color: prevBalance > 0 ? Colors.red : AppColors.textSecondary, prefix: ''),
+              const SizedBox(height: 4),
+              _OutstandingRow(label: '+ Pending Amount', value: currentSalePending, color: Colors.orange.shade700, prefix: '+'),
+              const SizedBox(height: 4),
+              _OutstandingRow(label: '- Outstanding Payment', value: outstandingPayment, color: Colors.green.shade700, prefix: '-'),
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('= Net Outstanding',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                Text('₹${currentOutstanding.toStringAsFixed(0)}',
+                  style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900,
+                    color: currentOutstanding > 0 ? Colors.red : AppColors.primaryGreen)),
+              ]),
+            ]),
+          ),
+        ],
       ]),
     );
+  }
+}
+
+/// A single row inside the Outstanding preview block.
+class _OutstandingRow extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  final String prefix;
+  const _OutstandingRow({required this.label, required this.value, required this.color, required this.prefix});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      Text(label, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+      Text('$prefix₹${value.toStringAsFixed(0)}',
+        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+    ]);
   }
 }
 
@@ -750,7 +1035,8 @@ class _EmptyStateHint extends StatelessWidget {
 
 class _BottomActions extends StatelessWidget {
   final VoidCallback? onSave;
-  const _BottomActions({required this.onSave});
+  final bool editMode;
+  const _BottomActions({required this.onSave, this.editMode = false});
 
   @override
   Widget build(BuildContext context) {
@@ -763,8 +1049,11 @@ class _BottomActions extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         SizedBox(width: double.infinity, child: ElevatedButton.icon(
           onPressed: onSave,
-          icon: const Icon(Icons.save_outlined, size: 18),
-          label: Text('Save Credit Sale', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
+          icon: Icon(editMode ? Icons.update : Icons.save_outlined, size: 18),
+          label: Text(
+            editMode ? 'Update Credit Sale' : 'Save Credit Sale',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),

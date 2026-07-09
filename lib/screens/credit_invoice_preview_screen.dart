@@ -35,10 +35,13 @@ class CreditInvoicePreviewScreen extends StatelessWidget {
   double get _paymentReceived => _parse(invoiceData['paymentReceived']);
   double get _pendingAmount => _parse(invoiceData['pendingAmount'] ?? invoiceData['currentSalePending'] ?? (_grandTotal - _paymentReceived));
   double get _currentBalance => _parse(invoiceData['currentBalance'] ?? invoiceData['updatedBalance'] ?? (_previousBalance + _pendingAmount));
+  double get _outstandingPayment => _parse(invoiceData['outstandingPayment']);
+  double get _finalOutstanding =>
+    _currentBalance - _outstandingPayment;
 
   String get _dateString {
     final rawDate = invoiceData['createdAt'] ?? invoiceData['date'];
-    final date = rawDate != null ? (DateTime.tryParse(rawDate.toString()) ?? DateTime.now()) : DateTime.now();
+    final date = rawDate != null ? (DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now()) : DateTime.now();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
@@ -66,6 +69,7 @@ class CreditInvoicePreviewScreen extends StatelessWidget {
   }
 
   Future<void> _handleShare(BuildContext context) async {
+    debugPrint("Phone: $_customerPhone");
     try {
       final pdfBytes = await _generatePdf();
       await Printing.sharePdf(
@@ -79,7 +83,7 @@ class CreditInvoicePreviewScreen extends StatelessWidget {
     }
   }
   Future<void> _sendCustomerSms(BuildContext context) async {
-  final message = '''
+  String message = '''
 BSM AGRO
 
 Dear $_customerName,
@@ -93,8 +97,18 @@ Purchase Amount : ₹${_grandTotal.toStringAsFixed(0)}
 Payment Received : ₹${_paymentReceived.toStringAsFixed(0)}
 
 Balance Added : ₹${_pendingAmount.toStringAsFixed(0)}
+''';
 
-Current Outstanding : ₹${_currentBalance.toStringAsFixed(0)}
+if (_outstandingPayment > 0) {
+  message += '''
+
+Outstanding Payment Received : ₹${_outstandingPayment.toStringAsFixed(0)}
+''';
+}
+
+message += '''
+
+Current Outstanding : ₹${_finalOutstanding.toStringAsFixed(0)}
 
 For any queries, please contact us.
 
@@ -206,12 +220,14 @@ BSM AGRO
                   ..._items.map((item) {
                     final name = item['product']?.toString() ?? item['itemName']?.toString() ?? 'Item';
                     final qty = _parse(item['qty'] ?? item['quantity']);
+                    final unit = item['unit']?.toString() ?? '';
+                    final displayUnit = unit.isEmpty ? 'Bag' : unit;
                     final price = _parse(item['price']);
                     final total = _parse(item['total'] ?? item['totalAmount']);
                     return pw.TableRow(
                       children: [
                         pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(name, style: const pw.TextStyle(fontSize: 11))),
-                        pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(qty.toStringAsFixed(0), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 11))),
+                        pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('${qty.toStringAsFixed(0)} $displayUnit', textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 11))),
                         pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(price.toStringAsFixed(0), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 11))),
                         pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(total.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold))),
                       ],
@@ -250,8 +266,8 @@ BSM AGRO
               pw.Container(
                 padding: const pw.EdgeInsets.all(12),
                 decoration: pw.BoxDecoration(
-                  color: _currentBalance > 0 ? PdfColors.red50 : PdfColors.green50,
-                  border: pw.Border.all(color: _currentBalance > 0 ? PdfColors.red200 : PdfColors.green200),
+                  color: _finalOutstanding > 0 ? PdfColors.red50 : PdfColors.green50,
+                  border: pw.Border.all(color: _finalOutstanding > 0 ? PdfColors.red200 : PdfColors.green200),
                   borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
                 ),
                 child: pw.Column(
@@ -265,10 +281,17 @@ BSM AGRO
                       pw.Text('Current Sale Pending', style: const pw.TextStyle(fontSize: 12)),
                       pw.Text('Rs ${_pendingAmount.toStringAsFixed(0)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.green800)),
                     ]),
-                    pw.Divider(color: _currentBalance > 0 ? PdfColors.red200 : PdfColors.green200),
+                    if (_outstandingPayment > 0) ...[
+                      pw.SizedBox(height: 4),
+                      pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                        pw.Text('Payment Towards Previous Balance', style: pw.TextStyle(fontSize: 12, color: PdfColors.green800)),
+                        pw.Text('- Rs ${_outstandingPayment.toStringAsFixed(0)}', style: pw.TextStyle(fontSize: 12, color: PdfColors.green800)),
+                      ]),
+                    ],
+                    pw.Divider(color: _finalOutstanding > 0 ? PdfColors.red200 : PdfColors.green200),
                     pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                      pw.Text('Current Balance', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-                      pw.Text('Rs ${_currentBalance.toStringAsFixed(0)}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _currentBalance > 0 ? PdfColors.red : PdfColors.green800)),
+                      pw.Text('Current Outstanding', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                      pw.Text('Rs ${_finalOutstanding.toStringAsFixed(0)}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _finalOutstanding > 0 ? PdfColors.red : PdfColors.green800)),
                     ]),
                   ],
                 ),
@@ -296,6 +319,10 @@ BSM AGRO
 
   @override
   Widget build(BuildContext context) {
+    debugPrint("========== CREDIT INVOICE ==========");
+  debugPrint(invoiceData.toString());
+  debugPrint("Items: ${invoiceData['items']}");
+  debugPrint("Products: ${invoiceData['products']}");
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4F0),
       appBar: AppBar(
@@ -426,6 +453,8 @@ BSM AGRO
                     ..._items.map((item) {
                       final name = item['product']?.toString() ?? item['itemName']?.toString() ?? 'Item';
                       final qty = _parse(item['qty'] ?? item['quantity']);
+                      final unit = item['unit']?.toString() ?? '';
+                      final displayUnit = unit.isEmpty ? 'Bag' : unit;
                       final price = _parse(item['price']);
                       final total = _parse(item['total'] ?? item['totalAmount']);
                       return Container(
@@ -437,7 +466,7 @@ BSM AGRO
                           Expanded(flex: 3, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                           ])),
-                          Expanded(child: Text(qty.toStringAsFixed(0), style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary), textAlign: TextAlign.center)),
+                          Expanded(child: Text('${qty.toStringAsFixed(0)} $displayUnit', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary), textAlign: TextAlign.center)),
                           Expanded(child: Text('₹${price.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary), textAlign: TextAlign.center)),
                           Expanded(child: Text('₹${total.toStringAsFixed(2)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary), textAlign: TextAlign.end)),
                         ]),
@@ -463,18 +492,22 @@ BSM AGRO
                   child: Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: _currentBalance > 0 ? Colors.red.withValues(alpha: 0.04) : _green.withValues(alpha: 0.04),
+                      color: _finalOutstanding > 0 ? Colors.red.withValues(alpha: 0.04) : _green.withValues(alpha: 0.04),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _currentBalance > 0 ? Colors.red.withValues(alpha: 0.25) : _green.withValues(alpha: 0.25)),
+                      border: Border.all(color: _finalOutstanding > 0 ? Colors.red.withValues(alpha: 0.25) : _green.withValues(alpha: 0.25)),
                     ),
                     child: Column(children: [
                       _TotalRow('Previous Balance', '₹${_previousBalance.toStringAsFixed(0)}',
                         _previousBalance > 0 ? Colors.red : AppColors.textSecondary),
                       const SizedBox(height: 4),
                       _TotalRow('Current Sale Pending', '₹${_pendingAmount.toStringAsFixed(0)}', _green),
+                      if (_outstandingPayment > 0) ...[
+                        const SizedBox(height: 4),
+                        _TotalRow('Payment Towards Previous Balance', '- ₹${_outstandingPayment.toStringAsFixed(0)}', Colors.green),
+                      ],
                       const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider()),
-                      _TotalRow('Current Balance', '₹${_currentBalance.toStringAsFixed(0)}',
-                        _currentBalance > 0 ? Colors.red : _green, bold: true, large: true),
+                      _TotalRow('Current Outstanding', '₹${_finalOutstanding.toStringAsFixed(0)}',
+                        _finalOutstanding > 0 ? Colors.red : _green, bold: true, large: true),
                     ]),
                   ),
                 ),

@@ -22,7 +22,7 @@ class LabourModel {
       phone: json['phone'] ?? '',
       role: json['role'] ?? '',
       dailyWage: (json['dailyWage'] as num?)?.toDouble() ?? 0.0,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'])?.toLocal() : null,
     );
   }
 

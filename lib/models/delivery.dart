@@ -311,7 +311,7 @@ class Delivery {
       crewLeader: json['crewLeader'] ?? '',
       priority: json['priority'] ?? 'NORMAL',
       status: status,
-      timestamp: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) ?? DateTime.now() : DateTime.now(),
+      timestamp: json['createdAt'] != null ? (DateTime.tryParse(json['createdAt'])?.toLocal() ?? DateTime.now()) : DateTime.now(),
       invoice: invoice,
       stockDeducted: json['stockDeducted'] ?? false,
       vehicleNumber: json['vehicleNumber']?.toString() ?? invoice?.vehicleNumber,

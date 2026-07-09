@@ -58,16 +58,16 @@ class PaymentModel {
       name: json['name'] ?? '',
       amount: _num(json, ['amount']),
       date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       note: json['note']?.toString(),
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString())
+          ? DateTime.tryParse(json['createdAt'].toString())?.toLocal()
           : null,
       isVoided: json['isVoided'] == true || json['isDeleted'] == true,
       voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
       voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
-          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())?.toLocal()
           : null,
     );
   }

@@ -172,12 +172,19 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
 
       final updatedDelivery = Delivery(
         id: widget.delivery.id,
-        customerName: _selectedCustomer!,
-        products: items,
-        crewLeader: _crewLeaderController.text,
-        priority: _selectedPriority,
-        status: widget.delivery.status,
-        timestamp: widget.delivery.timestamp,
+
+  customerId: widget.delivery.customerId,
+  customerName: _selectedCustomer!,
+  customerPhone: widget.delivery.customerPhone,
+
+  previousBalance: widget.delivery.previousBalance,
+  updatedBalance: widget.delivery.updatedBalance,
+
+  products: items,
+  crewLeader: _crewLeaderController.text,
+  priority: _selectedPriority,
+  status: widget.delivery.status,
+  timestamp: widget.delivery.timestamp,
         vehicleNumber: _vehicleNumberController.text.trim().isEmpty ? null : _vehicleNumberController.text.trim(),
         invoice: DeliveryInvoice(
           id: widget.delivery.invoice?.id ?? '',

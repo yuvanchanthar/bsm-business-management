@@ -17,7 +17,7 @@ class StatementItem {
       name: json['itemName']?.toString() ?? json['name']?.toString() ?? json['item']?.toString() ?? json['product']?.toString() ?? '',
       quantity: (json['quantity'] is num) ? (json['quantity'] as num).toDouble() : double.tryParse(json['qty']?.toString() ?? '0') ?? 0.0,
       price: parseOptional(json['price'] ?? json['unitPrice']),
-      unit: json['unit']?.toString(),
+      unit: json['unit']?.toString() ?? 'Bag',
       total: parseOptional(json['total'] ?? json['totalAmount']),
     );
   }
@@ -79,7 +79,7 @@ class StatementTransaction {
     }
 
     return StatementTransaction(
-      date: json['date'] != null ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now() : DateTime.now(),
+      date: json['date'] != null ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now()) : DateTime.now(),
       type: type,
       description: description,
       amount: amount,
@@ -140,8 +140,8 @@ class StatementPeriod {
 
   factory StatementPeriod.fromJson(Map<String, dynamic> json) {
     return StatementPeriod(
-      startDate: json['startDate'] != null ? DateTime.tryParse(json['startDate'].toString()) : null,
-      endDate: json['endDate'] != null ? DateTime.tryParse(json['endDate'].toString()) : null,
+      startDate: json['startDate'] != null ? DateTime.tryParse(json['startDate'].toString())?.toLocal() : null,
+      endDate: json['endDate'] != null ? DateTime.tryParse(json['endDate'].toString())?.toLocal() : null,
     );
   }
 }

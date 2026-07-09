@@ -424,7 +424,7 @@ class _CreditSaleCardState extends State<_CreditSaleCard> {
               const SizedBox(height: 8),
               ...t.items.map((item) {
                 final qty = item.quantity.toStringAsFixed(0);
-                final unit = item.unit ?? '';
+                final unit = (item.unit == null || item.unit!.isEmpty) ? 'Bag' : item.unit!;
                 final price = item.price != null ? '₹${item.price!.toStringAsFixed(0)}' : '';
                 final total = item.total != null ? item.total! : (item.price != null ? item.price! * item.quantity : 0.0);
                 return Container(

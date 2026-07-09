@@ -187,6 +187,27 @@ class ApiService {
     }
   }
 
+  /// PUT /api/sales/:id
+  Future<Map<String, dynamic>> updateCreditSale(
+      String id, Map<String, dynamic> payload) async {
+    try {
+      final response = await _dio.put('/sales/$id', data: payload);
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// DELETE /api/sales/:id
+  Future<bool> deleteCreditSale(String id) async {
+    try {
+      await _dio.delete('/sales/$id');
+      return true;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
   /// PUT /invoices/:id/template
   Future<bool> updateInvoiceTemplate(String invoiceId, String templateId) async {
     try {

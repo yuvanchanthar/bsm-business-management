@@ -150,7 +150,7 @@ switch (rawType) {
 
     return LedgerEntry(
       date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       type: resolvedType,
       // Backend sends the label in 'note'; 'description' kept as legacy fallback.

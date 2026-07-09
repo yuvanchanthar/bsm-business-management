@@ -335,7 +335,7 @@ class _LabourDetailReportScreenState extends State<LabourDetailReportScreen> {
 
     // Filter existing attendance records within the range
     final filteredRecords = _report!.attendance.where((rec) {
-      final recDate = DateTime.tryParse(rec.date);
+      final recDate = DateTime.tryParse(rec.date)?.toLocal();
       if (recDate == null) return false;
       return (recDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
               recDate.isBefore(end.add(const Duration(days: 1))));

@@ -45,7 +45,7 @@ class CustomerModel {
       totalPaid: (json['paid'] as num?)?.toDouble() ?? 0.0,
       lastPaymentDate: json['lastPaymentDate'] != null ? DateTime.tryParse(json['lastPaymentDate']) : null,
       pendingDays: json['pendingDays'] ?? 0,
-      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
+      createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'])?.toLocal() : null,
     );
   }
 

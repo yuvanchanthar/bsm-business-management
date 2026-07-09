@@ -79,7 +79,7 @@ class InventoryItemModel {
           itemJson['minQty']),
       category: itemJson['category']?.toString(),
       lastUpdated: itemJson['lastUpdated'] != null
-          ? DateTime.tryParse(itemJson['lastUpdated'].toString())
+          ? DateTime.tryParse(itemJson['lastUpdated'].toString())?.toLocal()
           : null,
     );
   }
@@ -122,7 +122,7 @@ class StockHistoryEntry {
           '',
       source: json['source']?.toString() ?? 'manual',
       date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
     );
   }

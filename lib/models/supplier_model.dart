@@ -64,7 +64,7 @@ class SupplierModel {
       advanceBalance: _safeNum(json, ['advanceBalance', 'advance_balance', 'advance']),
       isActive: json['isActive'] ?? true,
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString())
+          ? DateTime.tryParse(json['createdAt'].toString())?.toLocal()
           : null,
     );
   }
@@ -131,18 +131,18 @@ class SupplierPurchaseModel {
       totalAmount: _safeNum(json, ['totalAmount', 'total', 'amount']),
       note: json['note']?.toString() ?? '',
       date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       category: json['category']?.toString() ?? 'Others',
-      dueDate: json['dueDate'] != null ? DateTime.tryParse(json['dueDate'].toString()) : null,
+      dueDate: json['dueDate'] != null ? DateTime.tryParse(json['dueDate'].toString())?.toLocal() : null,
       invoiceImage: json['invoiceImage']?.toString(),
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString())
+          ? DateTime.tryParse(json['createdAt'].toString())?.toLocal()
           : null,
       isVoided: json['isVoided'] == true || json['isDeleted'] == true,
       voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
       voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
-          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())?.toLocal()
           : null,
     );
   }
@@ -199,15 +199,15 @@ class SupplierPaymentModel {
       amount: _safeNum(json, ['amount']),
       note: json['note']?.toString() ?? '',
       date: json['date'] != null
-          ? DateTime.tryParse(json['date'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['date'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString())
+          ? DateTime.tryParse(json['createdAt'].toString())?.toLocal()
           : null,
       isVoided: json['isVoided'] == true || json['isDeleted'] == true,
       voidedReason: (json['voidedReason'] ?? json['deleteReason'] ?? json['reason'])?.toString(),
       voidedAt: (json['voidedAt'] ?? json['deletedAt']) != null
-          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())
+          ? DateTime.tryParse((json['voidedAt'] ?? json['deletedAt']).toString())?.toLocal()
           : null,
     );
   }

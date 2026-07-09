@@ -125,7 +125,7 @@ class InvoiceModel {
       previousBalance: asDouble(json['previousBalance']),
       finalAmount: resolvedFinalAmount,
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt']) ?? DateTime.now()
+          ? (DateTime.tryParse(json['createdAt'])?.toLocal() ?? DateTime.now())
           : DateTime.now(),
     );
   }

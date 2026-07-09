@@ -3,7 +3,11 @@ class PendingCustomer {
   final String name;
   final double balance;
 
-  PendingCustomer({required this.id, required this.name, required this.balance});
+  PendingCustomer({
+    required this.id,
+    required this.name,
+    required this.balance,
+  });
 
   static double _asDouble(dynamic value, {double fallback = 0.0}) {
     if (value == null) return fallback;
@@ -53,8 +57,10 @@ class SupplierDueAlert {
       if (value is String) return double.tryParse(value.trim()) ?? fallback;
       return fallback;
     }
+
     return SupplierDueAlert(
-      purchaseId: json['purchaseId']?.toString() ?? json['_id']?.toString() ?? '',
+      purchaseId:
+          json['purchaseId']?.toString() ?? json['_id']?.toString() ?? '',
       supplierId: json['supplierId']?.toString() ?? '',
       supplierName: json['supplierName']?.toString() ?? '',
       itemName: json['itemName']?.toString() ?? json['item']?.toString() ?? '',
@@ -71,6 +77,8 @@ class DashboardStatsModel {
   final int todayOrders;
   final double todayRevenue;
   final double totalDeliveredAmount;
+  final double totalCreditSalesAmount;
+  final double totalBusinessAmount;
   final double pendingPaymentsAmount;
   final int pendingPaymentsCount;
   final double advancePaymentsAmount;
@@ -89,6 +97,8 @@ class DashboardStatsModel {
     required this.todayOrders,
     required this.todayRevenue,
     required this.totalDeliveredAmount,
+    required this.totalCreditSalesAmount,
+    required this.totalBusinessAmount,
     required this.pendingPaymentsAmount,
     required this.pendingPaymentsCount,
     required this.advancePaymentsAmount,
@@ -125,16 +135,17 @@ class DashboardStatsModel {
 
     final pendingCustomers = (json['mostPendingCustomers'] is List)
         ? (json['mostPendingCustomers'] as List)
-            .whereType<Map>()
-            .map((e) => PendingCustomer.fromJson(
-                Map<String, dynamic>.from(e as Map)))
-            .toList()
+              .whereType<Map>()
+              .map(
+                (e) => PendingCustomer.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              )
+              .toList()
         : <PendingCustomer>[];
 
     final rev = (json['monthlyRevenue'] is List)
-        ? (json['monthlyRevenue'] as List)
-            .map((e) => asDouble(e))
-            .toList()
+        ? (json['monthlyRevenue'] as List).map((e) => asDouble(e)).toList()
         : List.filled(12, 0.0);
 
     final supplierMap = json['supplier'] is Map ? json['supplier'] as Map : {};
@@ -144,7 +155,11 @@ class DashboardStatsModel {
     List<SupplierDueAlert> parseAlertList(dynamic listData) {
       if (listData is List) {
         return listData
-            .map((e) => SupplierDueAlert.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => SupplierDueAlert.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ),
+            )
             .toList();
       }
       return [];
@@ -163,18 +178,38 @@ class DashboardStatsModel {
       todayOrders: asInt(json['todayOrders']),
       todayRevenue: asDouble(json['todayRevenue']),
       totalDeliveredAmount: asDouble(json['totalDeliveredAmount']),
+      totalCreditSalesAmount: asDouble(json['totalCreditSalesAmount']),
+      totalBusinessAmount: asDouble(json['totalBusinessAmount']),
       pendingPaymentsAmount: asDouble(
-          (json['pendingPayments'] is Map) ? (json['pendingPayments'] as Map)['totalAmount'] : null),
+        (json['pendingPayments'] is Map)
+            ? (json['pendingPayments'] as Map)['totalAmount']
+            : null,
+      ),
       pendingPaymentsCount: asInt(
-          (json['pendingPayments'] is Map) ? (json['pendingPayments'] as Map)['count'] : null),
+        (json['pendingPayments'] is Map)
+            ? (json['pendingPayments'] as Map)['count']
+            : null,
+      ),
       advancePaymentsAmount: asDouble(
-          (json['advancePayments'] is Map) ? (json['advancePayments'] as Map)['totalAmount'] : null),
+        (json['advancePayments'] is Map)
+            ? (json['advancePayments'] as Map)['totalAmount']
+            : null,
+      ),
       labourPendingSalary: asDouble(
-          (json['labour'] is Map) ? (json['labour'] as Map)['totalPendingSalary'] : null),
+        (json['labour'] is Map)
+            ? (json['labour'] as Map)['totalPendingSalary']
+            : null,
+      ),
       labourPaidSalary: asDouble(
-          (json['labour'] is Map) ? (json['labour'] as Map)['totalPaidSalary'] : null),
+        (json['labour'] is Map)
+            ? (json['labour'] as Map)['totalPaidSalary']
+            : null,
+      ),
       labourEarnedSalary: asDouble(
-          (json['labour'] is Map) ? (json['labour'] as Map)['totalEarnedSalary'] : null),
+        (json['labour'] is Map)
+            ? (json['labour'] as Map)['totalEarnedSalary']
+            : null,
+      ),
       mostPendingCustomers: pendingCustomers,
       monthlyRevenue: rev,
       supplierPending: sPending,
@@ -190,6 +225,8 @@ class DashboardStatsModel {
       todayOrders: 0,
       todayRevenue: 0,
       totalDeliveredAmount: 0,
+      totalCreditSalesAmount: 0,
+      totalBusinessAmount: 0,
       pendingPaymentsAmount: 0,
       pendingPaymentsCount: 0,
       advancePaymentsAmount: 0,

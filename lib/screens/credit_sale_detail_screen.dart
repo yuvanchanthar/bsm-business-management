@@ -32,6 +32,16 @@ class _CreditSaleDetailScreenState extends State<CreditSaleDetailScreen> {
   Future<void> _fetchSaleDetails() async {
     try {
       final data = await _apiService.getCreditSaleById(widget.saleId);
+      debugPrint('========== CREDIT SALE DETAIL API RESPONSE ==========');
+      debugPrint('Keys: ${data.keys.toList()}');
+      debugPrint('currentBalance: ${data['currentBalance']}');
+      debugPrint('updatedBalance: ${data['updatedBalance']}');
+      debugPrint('previousBalance: ${data['previousBalance']}');
+      debugPrint('pendingAmount: ${data['pendingAmount']}');
+      debugPrint('outstandingPayment: ${data['outstandingPayment']}');
+      debugPrint('finalOutstanding: ${data['finalOutstanding']}');
+      debugPrint('currentOutstanding: ${data['currentOutstanding']}');
+      debugPrint('====================================================');
       if (mounted) {
         setState(() {
           _saleData = data;
@@ -64,10 +74,30 @@ class _CreditSaleDetailScreenState extends State<CreditSaleDetailScreen> {
   double get _paymentReceived => _parse(_saleData?['paymentReceived']);
   double get _pendingAmount => _parse(_saleData?['pendingAmount'] ?? _saleData?['currentSalePending'] ?? (_grandTotal - _paymentReceived));
   double get _currentBalance => _parse(_saleData?['currentBalance'] ?? _saleData?['updatedBalance'] ?? (_previousBalance + _pendingAmount));
+  // Returns null if key is absent or value is null — allows proper ?? chaining.
+  double? _tryField(String key) {
+    final val = _saleData?[key];
+    if (val == null) return null;
+    if (val is num) return val.toDouble();
+    if (val is String) return double.tryParse(val);
+    return null;
+  }
+
+  double get _outstandingPayment =>
+      _tryField('outstandingPayment') ??
+      _tryField('outstanding_payment') ??
+      _tryField('outstandingPaid') ??
+      0.0;
+
+  double get _finalOutstanding =>
+      _tryField('finalOutstanding') ??
+      _tryField('currentOutstanding') ??
+      _tryField('finalBalance') ??
+      (_currentBalance - _outstandingPayment);
 
   String get _dateString {
     final rawDate = _saleData?['createdAt'] ?? _saleData?['date'];
-    final date = rawDate != null ? (DateTime.tryParse(rawDate.toString()) ?? DateTime.now()) : DateTime.now();
+    final date = rawDate != null ? (DateTime.tryParse(rawDate.toString())?.toLocal() ?? DateTime.now()) : DateTime.now();
     return DateFormat('dd MMM yyyy, hh:mm a').format(date);
   }
 
@@ -227,6 +257,7 @@ class _CreditSaleDetailScreenState extends State<CreditSaleDetailScreen> {
           final name = item['product']?.toString() ?? item['itemName']?.toString() ?? 'Item';
           final qty = _parse(item['qty'] ?? item['quantity']);
           final unit = item['unit']?.toString() ?? '';
+          final displayUnit = unit.isEmpty ? 'Bag' : unit;
           final price = _parse(item['price']);
           final total = _parse(item['total'] ?? item['totalAmount']);
           
@@ -246,7 +277,7 @@ class _CreditSaleDetailScreenState extends State<CreditSaleDetailScreen> {
                     children: [
                       Text(name, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                       const SizedBox(height: 4),
-                      Text('${qty.toStringAsFixed(0)} $unit × ₹${price.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+                      Text('${qty.toStringAsFixed(0)} $displayUnit × ₹${price.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
                     ],
                   ),
                 ),
@@ -302,17 +333,21 @@ class _CreditSaleDetailScreenState extends State<CreditSaleDetailScreen> {
           const SizedBox(height: 8),
           _SummaryRow('Paid Now', '₹${_paymentReceived.toStringAsFixed(2)}', color: Colors.blue),
           const SizedBox(height: 8),
-          _SummaryRow('Pending', '₹${_pendingAmount.toStringAsFixed(2)}', isBold: true, color: _green),
+          _SummaryRow('Current Sale Pending', '₹${_pendingAmount.toStringAsFixed(2)}', isBold: true, color: _green),
           const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
           _SummaryRow('Previous Balance', '₹${_previousBalance.toStringAsFixed(2)}', color: _previousBalance > 0 ? Colors.red : AppColors.textSecondary),
-          const SizedBox(height: 12),
+          if (_outstandingPayment > 0) ...[
+            const SizedBox(height: 8),
+            _SummaryRow('Payment Towards Previous Balance', '- ₹${_outstandingPayment.toStringAsFixed(2)}', color: Colors.green),
+          ],
+          const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _currentBalance > 0 ? Colors.red.withValues(alpha: 0.08) : _green.withValues(alpha: 0.08),
+              color: _finalOutstanding > 0 ? Colors.red.withValues(alpha: 0.08) : _green.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: _SummaryRow('Current Balance', '₹${_currentBalance.toStringAsFixed(2)}', isBold: true, isLarge: true, color: _currentBalance > 0 ? Colors.red : _green),
+            child: _SummaryRow('Current Outstanding', '₹${_finalOutstanding.toStringAsFixed(2)}', isBold: true, isLarge: true, color: _finalOutstanding > 0 ? Colors.red : _green),
           ),
         ],
       ),

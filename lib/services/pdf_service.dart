@@ -614,11 +614,12 @@ class PdfService {
       String qtyStr = item.quantity.truncateToDouble() == item.quantity
           ? item.quantity.toInt().toString()
           : item.quantity.toStringAsFixed(1);
+      final unit = (item.unit == null || item.unit!.isEmpty) ? 'Bag' : item.unit!;
 
       return pw.Padding(
         padding: const pw.EdgeInsets.only(bottom: 2),
         child: pw.Text(
-          '• ${item.name} (Qty: $qtyStr)',
+          '• ${item.name} (Qty: $qtyStr $unit)',
           style: pw.TextStyle(
             fontSize: 8,
             color: PdfColors.grey700,
