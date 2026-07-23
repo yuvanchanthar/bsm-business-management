@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/delivery.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
@@ -34,16 +35,68 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
   bool _isLoading = true;
   String? _error;
   String _selectedFilter = 'all';
+  final TextEditingController _searchCtrl = TextEditingController();
+  DateTime? _filterStartDate;
+  DateTime? _filterEndDate;
 
   @override
   void initState() {
     super.initState();
+    _searchCtrl.addListener(() {
+      setState(() {});
+    });
     _fetchDeliveries();
   }
 
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   List<Delivery> get _filteredDeliveries {
-    if (_selectedFilter == 'all') return _deliveries;
-    return _deliveries.where((d) => d.status == _selectedFilter).toList();
+    List<Delivery> filtered = _deliveries;
+
+    // Status Filter
+    if (_selectedFilter != 'all') {
+      filtered = filtered.where((d) => d.status == _selectedFilter).toList();
+    }
+
+    // Date Filter (Structured for future range filtering)
+    if (_filterStartDate != null && _filterEndDate != null) {
+      final start = DateTime(_filterStartDate!.year, _filterStartDate!.month, _filterStartDate!.day);
+      final end = DateTime(_filterEndDate!.year, _filterEndDate!.month, _filterEndDate!.day, 23, 59, 59, 999);
+      filtered = filtered.where((d) {
+        return d.timestamp.isAfter(start.subtract(const Duration(milliseconds: 1))) && 
+               d.timestamp.isBefore(end.add(const Duration(milliseconds: 1)));
+      }).toList();
+    }
+
+    // Search Filter
+    if (_searchCtrl.text.isNotEmpty) {
+      final q = _searchCtrl.text.toLowerCase();
+      filtered = filtered.where((d) =>
+          d.customerName.toLowerCase().contains(q) ||
+          d.id.toLowerCase().contains(q) ||
+          (d.invoice?.invoiceNumber?.toLowerCase().contains(q) ?? false)).toList();
+    }
+
+    return filtered;
+  }
+
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _filterStartDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() {
+        _filterStartDate = picked;
+        _filterEndDate = picked;
+      });
+    }
   }
 
   Future<void> _fetchDeliveries() async {
@@ -280,7 +333,7 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
 
     final StringBuffer productsBuffer = StringBuffer();
     for (var p in delivery.products) {
-      productsBuffer.writeln('${p.name} - ${p.quantity} ${p.unit}');
+      productsBuffer.writeln('${p.name} - ${fmtStock(p.quantity)} ${p.unit}');
     }
 
     final String message = '''
@@ -377,6 +430,114 @@ final Uri url = Uri.parse(
             ),
           ),
           const SizedBox(height: 16),
+          // Search bar and Date Filter
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: const InputDecoration(
+                              hintText: 'Search deliveries...',
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                        if (_searchCtrl.text.isNotEmpty)
+                          GestureDetector(
+                            onTap: _searchCtrl.clear,
+                            child: const Icon(Icons.close, size: 18, color: AppColors.textSecondary),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: _selectDate,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _filterStartDate != null ? AppColors.primaryGreen : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.calendar_today,
+                      color: _filterStartDate != null ? Colors.white : AppColors.primaryGreen,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_filterStartDate != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _filterStartDate == _filterEndDate 
+                      ? 'Selected Date: ${DateFormat('dd/MM/yyyy').format(_filterStartDate!)}'
+                      : 'Selected Dates: ${DateFormat('dd/MM/yyyy').format(_filterStartDate!)} - ${DateFormat('dd/MM/yyyy').format(_filterEndDate!)}',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryGreen,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _filterStartDate = null;
+                        _filterEndDate = null;
+                      });
+                    },
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Clear Filter',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 16),
           // Filter Chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -408,9 +569,13 @@ final Uri url = Uri.parse(
                     : _filteredDeliveries.isEmpty
                         ? Center(
                             child: Text(
-                              _selectedFilter == 'all'
-                                  ? 'No deliveries found.'
-                                  : 'No $_selectedFilter deliveries found.',
+                              _filterStartDate != null
+                                  ? 'No deliveries found for the selected date.'
+                                  : _searchCtrl.text.isNotEmpty 
+                                      ? 'No deliveries found for "${_searchCtrl.text}".'
+                                      : _selectedFilter == 'all'
+                                          ? 'No deliveries found.'
+                                          : 'No $_selectedFilter deliveries found.',
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,

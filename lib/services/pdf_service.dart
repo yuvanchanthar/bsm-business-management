@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import '../core/stock_format.dart';
 import '../models/invoice_model.dart';
 import '../models/payment_model.dart';
 import '../models/supplier_model.dart';
@@ -225,7 +226,7 @@ class PdfService {
       txs.add({
         'date': p.date,
         'type': 'Purchase',
-        'desc': '${p.item} (${p.quantity.toStringAsFixed(p.quantity % 1 == 0 ? 0 : 1)} ${p.unit})',
+        'desc': '${p.item} (${fmtStock(p.quantity)} ${p.unit})',
         'debit': p.totalAmount,
         'credit': 0.0,
       });
@@ -728,16 +729,33 @@ class PdfService {
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: pw.BoxDecoration(
-                    color: PdfColors.red50,
+                    color: statement.summary.pendingBalance > 0 ? PdfColors.red50 : PdfColors.green50,
                     borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-                    border: pw.Border.all(color: PdfColors.red300, width: 1.5),
+                    border: pw.Border.all(
+                      color: statement.summary.pendingBalance > 0 ? PdfColors.red300 : PdfColors.green300, 
+                      width: 1.5
+                    ),
                   ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.Text('Pending Balance', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                      pw.Text(
+                        statement.summary.pendingBalance < 0 ? 'Advance Credit' : 'Pending Balance', 
+                        style: pw.TextStyle(
+                          fontSize: 12, 
+                          fontWeight: pw.FontWeight.bold, 
+                          color: statement.summary.pendingBalance > 0 ? PdfColors.red900 : PdfColors.green900
+                        )
+                      ),
                       pw.SizedBox(height: 4),
-                      pw.Text('₹${statement.summary.pendingBalance.abs().toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.red)),
+                      pw.Text(
+                        '₹${statement.summary.pendingBalance.abs().toStringAsFixed(2)}', 
+                        style: pw.TextStyle(
+                          fontSize: 18, 
+                          fontWeight: pw.FontWeight.bold, 
+                          color: statement.summary.pendingBalance > 0 ? PdfColors.red : PdfColor.fromInt(0xFF277533)
+                        )
+                      ),
                     ],
                   ),
                 ),

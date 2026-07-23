@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../models/inventory_model.dart';
 import '../repositories/inventory_repository.dart';
+import '../core/stock_format.dart';
 import 'inventory_detail_screen.dart';
 
 class InventoryCategoryItemsScreen extends StatefulWidget {
@@ -235,8 +236,7 @@ class _InventoryCategoryItemsScreenState
                         ),
                         _SummaryStatCol(
                           label: 'TOTAL STOCK',
-                          value:
-                              '${detail.summary.totalStock.toStringAsFixed(0)} ${detail.summary.unit}',
+                          value: '${fmtStock(detail.summary.totalStock)} ${detail.summary.unit}',
                           color: Colors.blueGrey,
                         ),
                         _SummaryStatCol(
@@ -474,7 +474,7 @@ class _CategoryInventoryCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Threshold: ${item.threshold.toStringAsFixed(0)} ${item.unit}',
+                      'Threshold: ${fmtStock(item.threshold)} ${item.unit}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -515,7 +515,7 @@ class _CategoryInventoryCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${item.currentStock.toStringAsFixed(0)} ${item.unit}',
+                      '${fmtStock(item.currentStock)} ${item.unit}',
                       style: GoogleFonts.inter(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -568,7 +568,7 @@ class _CategoryInventoryCard extends StatelessWidget {
                     style: GoogleFonts.inter(
                         fontSize: 10, color: AppColors.textHint)),
                 Text(
-                  'Min: ${item.threshold.toStringAsFixed(0)}',
+                  'Min: ${fmtStock(item.threshold)}',
                   style: GoogleFonts.inter(
                       fontSize: 10, color: AppColors.textSecondary),
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/customer_model.dart';
 import '../models/inventory_model.dart';
 import '../models/payment_model.dart';
@@ -667,7 +668,7 @@ class _ProductRowState extends State<_ProductRow> {
   @override
   void initState() {
     super.initState();
-    _qtyCtrl = TextEditingController(text: widget.product.quantity > 0 ? widget.product.quantity.toStringAsFixed(0) : '');
+    _qtyCtrl = TextEditingController(text: widget.product.quantity > 0 ? fmtStock(widget.product.quantity) : '');
     _priceCtrl = TextEditingController(text: widget.product.price > 0 ? widget.product.price.toStringAsFixed(0) : '');
   }
 
@@ -725,7 +726,7 @@ class _ProductRowState extends State<_ProductRow> {
             value: item,
             child: Row(children: [
               Expanded(child: Text(item.itemName, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600))),
-              Text('${item.currentStock.toStringAsFixed(0)} ${item.unit}',
+              Text('${fmtStock(item.currentStock)} ${item.unit}',
                 style: GoogleFonts.inter(fontSize: 11, color: item.currentStock < 10 ? Colors.red : AppColors.textSecondary)),
             ]),
           )).toList(),
@@ -744,7 +745,7 @@ class _ProductRowState extends State<_ProductRow> {
           Row(children: [
             const Icon(Icons.inventory_2_outlined, size: 12, color: AppColors.textSecondary),
             const SizedBox(width: 4),
-            Text('Available: ${p.item!.currentStock.toStringAsFixed(0)} ${p.item!.unit}',
+            Text('Available: ${fmtStock(p.item!.currentStock)} ${p.item!.unit}',
               style: GoogleFonts.inter(fontSize: 11, color: p.item!.currentStock < 10 ? Colors.red : AppColors.textSecondary)),
           ]),
         ],

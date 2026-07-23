@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/supplier_model.dart';
 import '../models/inventory_model.dart';
 import '../services/supplier_service.dart';
@@ -56,7 +57,7 @@ class _EditSupplierPurchaseScreenState
     _selectedCategory = widget.purchase.category;
     _selectedDate     = widget.purchase.date;
     _selectedDueDate  = widget.purchase.dueDate;
-    _qtyCtrl.text     = widget.purchase.quantity > 0 ? widget.purchase.quantity.toString() : '';
+    _qtyCtrl.text     = widget.purchase.quantity > 0 ? fmtStock(widget.purchase.quantity) : '';
     _unitCtrl.text    = widget.purchase.unit;
     _priceCtrl.text   = widget.purchase.pricePerUnit > 0 ? widget.purchase.pricePerUnit.toString() : '';
     _noteCtrl.text    = widget.purchase.note;
@@ -89,7 +90,7 @@ class _EditSupplierPurchaseScreenState
           _selectedDueDate = raw.dueDate;
           
           // Map backend fields correctly to the controllers, convert double to String safely
-          _qtyCtrl.text = raw.quantity > 0 ? raw.quantity.toString() : '';
+          _qtyCtrl.text = raw.quantity > 0 ? fmtStock(raw.quantity) : '';
           _unitCtrl.text = raw.unit;
           _priceCtrl.text = raw.pricePerUnit > 0 ? raw.pricePerUnit.toString() : '';
           _noteCtrl.text = raw.note;

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import '../core/stock_format.dart';
 import '../core/app_colors.dart';
 import '../models/supplier_model.dart';
 import '../services/supplier_service.dart';
@@ -878,7 +879,7 @@ class _PurchaseCardState extends State<_PurchaseCard> {
                         style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     const SizedBox(height: 4),
                     Wrap(spacing: 6, runSpacing: 4, children: [
-                      _Badge('${p.quantity.toStringAsFixed(p.quantity % 1 == 0 ? 0 : 1)} ${p.unit}', Colors.blueGrey),
+                      _Badge('${fmtStock(p.quantity)} ${p.unit}', Colors.blueGrey),
                       _Badge('₹${p.pricePerUnit.toStringAsFixed(0)}/unit', Colors.orange),
                       if (p.category != null && p.category!.isNotEmpty) _Badge(p.category!, Colors.purple),
                     ]),

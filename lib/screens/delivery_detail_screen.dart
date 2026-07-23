@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/ledger_model.dart';
 import '../models/delivery.dart';
 import '../services/api_service.dart';
@@ -280,7 +281,7 @@ class _DeliveryDetailScreenState extends State<DeliveryDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(product.name, style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                Text('${product.quantity} x ₹${product.pricePerUnit}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                Text('${fmtStock(product.quantity)} x ₹${product.pricePerUnit}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
               ],
             ),
           ),

@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import '../core/app_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../core/stock_format.dart';
 import '../controllers/auth_controller.dart';
 import '../widgets/stat_card.dart';
 import 'login_screen.dart';
@@ -845,7 +846,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Remaining: ${alert.currentStock.toStringAsFixed(0)} ${alert.unit}',
+                    'Remaining: ${fmtStock(alert.currentStock)} ${alert.unit}',
                     style: GoogleFonts.inter(
                       color: AppColors.textSecondary,
                       fontSize: 12,

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../models/inventory_model.dart';
 import '../repositories/inventory_repository.dart';
+import '../core/stock_format.dart';
 
 class AddExistingStockDialog extends StatefulWidget {
   /// Pre-select a specific item. Pass null to let user choose.
@@ -32,6 +33,7 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
   final _repo     = InventoryRepository();
 
   InventoryItemModel? _selectedItem;
+  String _selectedUnit = 'Bag';
   String _reason  = 'Manual Entry';
   bool _isSaving  = false;
 
@@ -73,6 +75,7 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
       await _repo.addStock(
         itemId:   _selectedItem!.id!,
         quantity: double.parse(_qtyCtrl.text.trim()),
+        unit:     _selectedUnit,
         reason:   _reason,
         notes:    _noteCtrl.text.trim(),
       );
@@ -163,7 +166,13 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                       const SizedBox(width: 10),
                       Expanded(child: Text(widget.preSelectedItem!.itemName,
                         style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: _teal))),
-                      Text('${widget.preSelectedItem!.currentStock.toStringAsFixed(0)} ${widget.preSelectedItem!.unit} in stock',
+                      Text(() {
+                        try {
+                          final dynItem = widget.preSelectedItem as dynamic;
+                          if (dynItem.displayStock != null) return dynItem.displayStock.toString();
+                        } catch (_) {}
+                        return '${fmtStock(widget.preSelectedItem!.currentStock)} ${widget.preSelectedItem!.unit} in stock';
+                      }(),
                         style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
                     ]),
                   ),
@@ -176,22 +185,35 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       prefixIcon: const Icon(Icons.inventory_2_outlined),
                     ),
-                    items: items.map((item) => DropdownMenuItem(
-                      value: item,
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(
-                            text: item.itemName,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                          ),
-                          TextSpan(
-                            text: '  ·  ${item.currentStock.toStringAsFixed(0)} ${item.unit}',
-                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
-                          ),
-                        ]),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )).toList(),
+                    items: items.map((item) {
+                      String stockText = '${fmtStock(item.currentStock)} ${item.unit}';
+                      String? bagWeightText;
+                      try {
+                        final dynItem = item as dynamic;
+                        if (dynItem.displayStock != null) stockText = dynItem.displayStock.toString();
+                      } catch (_) {}
+                      try {
+                        final dynItem = item as dynamic;
+                        if (dynItem.bagWeight != null) bagWeightText = '1 Bag = ${dynItem.bagWeight} KG';
+                      } catch (_) {}
+
+                      return DropdownMenuItem(
+                        value: item,
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(
+                              text: item.itemName,
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                            ),
+                            TextSpan(
+                              text: '  ·  $stockText${bagWeightText != null ? ' ($bagWeightText)' : ''}',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                          ]),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
                     onChanged: (v) => setState(() => _selectedItem = v),
                     validator: (v) => v == null ? 'Select an item' : null,
                     hint: Text('Choose item', style: GoogleFonts.inter()),
@@ -215,7 +237,13 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                         const SizedBox(width: 8),
                         Text('Current Stock: ',
                           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
-                        Text('${_selectedItem!.currentStock.toStringAsFixed(0)} ${_selectedItem!.unit}',
+                        Text(() {
+                          try {
+                            final dynItem = _selectedItem as dynamic;
+                            if (dynItem.displayStock != null) return dynItem.displayStock.toString();
+                          } catch (_) {}
+                          return '${fmtStock(_selectedItem!.currentStock)} ${_selectedItem!.unit}';
+                        }(),
                           style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.bold, color: _teal)),
                       ]),
                     ),
@@ -229,9 +257,7 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                     labelText: 'Quantity to Add',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     prefixIcon: const Icon(Icons.add_circle_outline),
-                    suffix: _selectedItem != null
-                        ? Text(_selectedItem!.unit, style: GoogleFonts.inter(color: AppColors.textSecondary))
-                        : null,
+                    suffix: Text(_selectedUnit, style: GoogleFonts.inter(color: AppColors.textSecondary)),
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
@@ -239,6 +265,21 @@ class _AddExistingStockDialogState extends State<AddExistingStockDialog> {
                     if (d == null || d <= 0) return 'Enter a valid quantity';
                     return null;
                   },
+                ),
+                const SizedBox(height: 16),
+
+                // ── Unit ──────────────────────────────────────────────────
+                DropdownButtonFormField<String>(
+                  value: _selectedUnit,
+                  decoration: InputDecoration(
+                    labelText: 'Unit',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  items: ['Bag', 'KG'].map((u) => DropdownMenuItem(
+                    value: u,
+                    child: Text(u, style: GoogleFonts.inter()),
+                  )).toList(),
+                  onChanged: (v) => setState(() => _selectedUnit = v ?? _selectedUnit),
                 ),
                 const SizedBox(height: 16),
 

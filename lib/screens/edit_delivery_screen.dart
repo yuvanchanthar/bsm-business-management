@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../widgets/primary_button.dart';
 import '../models/delivery.dart';
 import '../models/invoice_model.dart';
@@ -73,7 +74,11 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
       final entry = ProductItemEntry();
       entry.productName = item.name;
       entry.quantity = item.quantity;
-      entry.pricingType = item.pricingType;
+      // Load pricingType and inventoryUnit INDEPENDENTLY from the saved delivery.
+      // pricingType comes from item.pricingType (Per KG / Per Bag).
+      // inventoryUnit comes from item.unit (KG / Bags) — never derived from pricingType.
+      entry.pricingType = item.pricingType.isNotEmpty ? item.pricingType : 'Per KG';
+      entry.inventoryUnit = item.unit.isNotEmpty ? item.unit : 'KG';
       entry.pricePerUnit = item.pricePerUnit;
       _productEntries.add(entry);
     }
@@ -165,7 +170,8 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
       final items = _productEntries.map((entry) => ProductItem(
         name: entry.productName ?? 'Unknown',
         quantity: entry.quantity,
-        unit: entry.unit,
+        // Send inventoryUnit independently — never derive from pricingType.
+        unit: entry.inventoryUnit,
         pricingType: entry.pricingType,
         pricePerUnit: entry.pricePerUnit,
       )).toList();
@@ -190,6 +196,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
           id: widget.delivery.invoice?.id ?? '',
           amount: _calculateGrandTotal,
           pdfUrl: widget.delivery.invoice?.pdfUrl,
+          templateId: widget.delivery.invoice?.templateId,
           gstNumber: _gstController.text.trim().isEmpty ? null : _gstController.text.trim(),
           companyName: _companyController.text.trim().isEmpty ? null : _companyController.text.trim(),
           address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
@@ -210,8 +217,20 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Delivery updated! Preparing updated invoice...')),
         );
+
+        // Fetch the fresh delivery from the backend so that templateId (and all
+        // other server-side fields) are authoritative for PDF generation.
+        Delivery freshDelivery;
         try {
-          final invoice = InvoiceModel.fromDelivery(updatedDelivery, 'updated');
+          freshDelivery = await _apiService.getDeliveryById(widget.delivery.id);
+        } catch (_) {
+          // If the fetch fails, fall back to the local object so the flow
+          // still completes — template may not be synced in this rare case.
+          freshDelivery = updatedDelivery;
+        }
+
+        try {
+          final invoice = InvoiceModel.fromDelivery(freshDelivery, 'updated');
           final pdfBytes = await _pdfService.generateInvoice(invoice);
           final dir = await getTemporaryDirectory();
           final file = File('${dir.path}/Updated_Invoice_${widget.delivery.id}.pdf');
@@ -219,13 +238,13 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
           if (mounted) {
             await Share.shareXFiles(
               [XFile(file.path, mimeType: 'application/pdf')],
-              subject: 'Updated Invoice — ${updatedDelivery.customerName}',
+              subject: 'Updated Invoice — ${freshDelivery.customerName}',
               text: 'Please find the updated invoice for delivery ${widget.delivery.id}.',
             );
           }
         } catch (_) {
           try {
-            final invoice = InvoiceModel.fromDelivery(updatedDelivery, 'updated');
+            final invoice = InvoiceModel.fromDelivery(freshDelivery, 'updated');
             await Printing.layoutPdf(
               onLayout: (format) async => _pdfService.generateInvoice(invoice),
               name: 'Updated_Invoice_${widget.delivery.id}.pdf',
@@ -459,6 +478,17 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
                             const SizedBox(width: 8),
                             Expanded(child: _buildPricingTypeToggle(item, 'Per Bag')),
                           ]),
+                          const SizedBox(height: 8),
+
+                          // Inventory Unit selector — independent of Pricing Type
+                          Text('Inventory Unit',
+                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                          const SizedBox(height: 6),
+                          Row(children: [
+                            Expanded(child: _buildInventoryUnitToggle(item, 'KG')),
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildInventoryUnitToggle(item, 'Bags')),
+                          ]),
                           const SizedBox(height: 16),
 
                           Row(children: [
@@ -473,7 +503,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
                             )),
                             const SizedBox(width: 12),
                             Expanded(child: TextFormField(
-                              initialValue: item.quantity.toString(),
+                              initialValue: fmtStock(item.quantity),
                               decoration: _inputDecoration('Qty', Icons.numbers),
                               keyboardType: TextInputType.number,
                               onChanged: (v) => setState(() => item.quantity = double.tryParse(v) ?? 0),
@@ -604,6 +634,7 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
   Widget _buildPricingTypeToggle(ProductItemEntry item, String type) {
     final isSelected = item.pricingType == type;
     return InkWell(
+      // Only update pricingType. Never touch inventoryUnit.
       onTap: () => setState(() => item.pricingType = type),
       child: Container(
         height: 44,
@@ -618,6 +649,31 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             color: isSelected ? AppColors.primaryGreen : AppColors.textSecondary,
+          )),
+      ),
+    );
+  }
+
+  /// Inventory unit toggle — controls the unit sent to backend for stock deduction.
+  /// Completely independent from pricingType. Uses blue to distinguish from pricing toggle.
+  Widget _buildInventoryUnitToggle(ProductItemEntry item, String unit) {
+    final isSelected = item.inventoryUnit == unit;
+    return InkWell(
+      // Only update inventoryUnit. Never touch pricingType.
+      onTap: () => setState(() => item.inventoryUnit = unit),
+      child: Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.3)),
+        ),
+        alignment: Alignment.center,
+        child: Text(unit,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.blue : AppColors.textSecondary,
           )),
       ),
     );

@@ -22,8 +22,10 @@ class AddInventoryItemDialog extends StatefulWidget {
 class _AddInventoryItemDialogState extends State<AddInventoryItemDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _unitCtrl = TextEditingController(text: 'units');
+  final _bagWeightCtrl = TextEditingController(text: '50');
   final _thresholdCtrl = TextEditingController(text: '10');
+  
+  String _selectedUnit = 'Bag';
   
   String? _selectedCategory;
   bool _isSaving = false;
@@ -45,7 +47,8 @@ class _AddInventoryItemDialogState extends State<AddInventoryItemDialog> {
       final success = await service.addInventoryItem(
         itemName: _nameCtrl.text.trim(),
         category: _selectedCategory!,
-        unit: _unitCtrl.text.trim(),
+        unit: _selectedUnit,
+        bagWeight: _selectedUnit == 'Bag' ? double.parse(_bagWeightCtrl.text.trim()) : null,
         threshold: double.tryParse(_thresholdCtrl.text.trim()) ?? 0,
       );
 
@@ -74,7 +77,7 @@ class _AddInventoryItemDialogState extends State<AddInventoryItemDialog> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _unitCtrl.dispose();
+    _bagWeightCtrl.dispose();
     _thresholdCtrl.dispose();
     super.dispose();
   }
@@ -137,35 +140,54 @@ class _AddInventoryItemDialogState extends State<AddInventoryItemDialog> {
                   hint: Text('Select Category', style: GoogleFonts.inter()),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _unitCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Unit (e.g. kg, pcs)',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _thresholdCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: 'Low Stock At',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          if (double.tryParse(v.trim()) == null) return 'Invalid number';
-                          return null;
-                        },
-                      ),
-                    ),
+                DropdownButtonFormField<String>(
+                  value: _selectedUnit,
+                  decoration: InputDecoration(
+                    labelText: 'Unit',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  items: [
+                    DropdownMenuItem(value: 'Bag', child: Text('Bag', style: GoogleFonts.inter())),
+                    DropdownMenuItem(value: 'KG', child: Text('KG', style: GoogleFonts.inter())),
                   ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() => _selectedUnit = v);
+                    }
+                  },
+                ),
+                if (_selectedUnit == 'Bag') ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _bagWeightCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Bag Weight (KG)',
+                      hintText: 'Example: 50',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      prefixIcon: const Icon(Icons.scale),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      final weight = double.tryParse(v.trim());
+                      if (weight == null || weight <= 0) return 'Invalid number';
+                      return null;
+                    },
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _thresholdCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Low Stock Threshold',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    if (double.tryParse(v.trim()) == null) return 'Invalid number';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 24),
                 Row(

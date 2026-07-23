@@ -161,21 +161,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     _buildDialogBalanceCard(
                       'Amount Received',
                       enteredAmount,
-                      isOverpaid ? Colors.red : AppColors.primaryGreen,
+                      AppColors.primaryGreen,
                     ),
                     const SizedBox(height: 8),
                     // Remaining Balance Card — show abs so it never shows negative
                     _buildDialogBalanceCard(
                       remainingBalance >= 0 ? 'Remaining Pending' : 'Advance Credit',
                       remainingBalance.abs(),
-                      remainingBalance < 0 ? AppColors.primaryGreen : AppColors.primaryGreen,
+                      AppColors.primaryGreen,
                     ),
                     if (isOverpaid)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'Entered amount exceeds pending balance',
-                          style: GoogleFonts.inter(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold),
+                          'Excess payment will be recorded as Advance Credit.',
+                          style: GoogleFonts.inter(color: AppColors.primaryGreen, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
                   ],
@@ -199,11 +199,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: isOverpaid ? Colors.grey : AppColors.primaryGreen,
+                  backgroundColor: enteredAmount <= 0 ? Colors.grey : AppColors.primaryGreen,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 ),
-                onPressed: isOverpaid ? null : () => Navigator.pop(context, true),
+                onPressed: enteredAmount <= 0 ? null : () => Navigator.pop(context, true),
                 child: Text('Save Payment', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],

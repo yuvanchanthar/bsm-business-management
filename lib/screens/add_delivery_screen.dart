@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/delivery.dart';
 import '../models/customer_model.dart';
 import '../models/inventory_model.dart';
@@ -65,7 +66,10 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         (item) => item.itemName == entry.productName,
         orElse: () => InventoryItemModel(itemName: '', currentStock: 0, unit: '', threshold: 0),
       );
-      if (invItem.itemName.isNotEmpty && entry.quantity > invItem.currentStock) {
+      if (invItem.itemName.isEmpty) continue;
+      // Only block if both entry and inventory are in the same unit (Bags).
+      // Cross-unit conversion (KG -> Bags) is handled by the backend — never compare raw here.
+      if (invItem.unit == entry.inventoryUnit && entry.quantity > invItem.currentStock) {
         return true;
       }
     }
@@ -209,7 +213,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         return ProductItem(
           name: entry.productName ?? 'Unknown',
           quantity: entry.quantity,
-          unit: entry.unit,
+          // inventoryUnit is independent of pricingType — never derive one from the other.
+          unit: entry.inventoryUnit,
           pricingType: entry.pricingType,
           pricePerUnit: entry.pricePerUnit,
           costPerUnit: 0.0,
@@ -304,7 +309,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
     final StringBuffer productsBuffer = StringBuffer();
     for (var p in delivery.products) {
-      productsBuffer.writeln('${p.name} - ${p.quantity} ${p.unit}');
+      productsBuffer.writeln('${p.name} - ${fmtStock(p.quantity)} ${p.unit}');
     }
 
     final String message = '''
@@ -1081,11 +1086,20 @@ BSM Agro Industry''';
 class ProductItemEntry {
   String? productName;
   double quantity = 0;
+
+  /// The pricing mode for calculating the invoice subtotal.
+  /// 'Per KG' or 'Per Bag'.
+  /// This ONLY affects price calculations — never inventory deduction.
   String pricingType = 'Per KG';
+
+  /// The inventory unit sent to the backend for stock deduction.
+  /// 'KG' or 'Bags'.
+  /// This is completely INDEPENDENT from pricingType.
+  String inventoryUnit = 'KG';
+
   double pricePerUnit = 0;
   // costPerUnit removed from UI — kept in model for payload compatibility
   double get subtotal => quantity * pricePerUnit;
-  String get unit => pricingType == 'Per KG' ? 'KG' : 'Bags';
 
   // Owned controllers prevent state-shift when list is mutated
   final TextEditingController priceController = TextEditingController();
@@ -1135,7 +1149,7 @@ class _ProductItemCardState extends State<_ProductItemCard> {
       text: widget.item.pricePerUnit > 0 ? widget.item.pricePerUnit.toString() : '',
     );
     _qtyCtrl = TextEditingController(
-      text: widget.item.quantity > 0 ? widget.item.quantity.toString() : '',
+      text: widget.item.quantity > 0 ? fmtStock(widget.item.quantity) : '',
     );
   }
 
@@ -1168,7 +1182,12 @@ class _ProductItemCardState extends State<_ProductItemCard> {
         items.add(DropdownMenuItem(
           value: 'HEADER_${group.category}',
           enabled: false,
-          child: Text(group.category, style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen, fontSize: 13)),
+          child: Text(
+            group.category, 
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppColors.primaryGreen, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ));
         // Group Items
         for (var itemName in group.items) {
@@ -1179,9 +1198,13 @@ class _ProductItemCardState extends State<_ProductItemCard> {
           items.add(DropdownMenuItem(
             value: itemName,
             child: Padding(
-              padding: const EdgeInsets.only(left: 16.0),
-              child: Text('$itemName (Stock: ${invItem.currentStock.toStringAsFixed(0)} ${invItem.unit})', 
-                style: GoogleFonts.inter(color: AppColors.textPrimary)),
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Text(
+                '$itemName (Stock: ${fmtStock(invItem.currentStock)} ${invItem.unit})', 
+                style: GoogleFonts.inter(color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ));
         }
@@ -1207,9 +1230,16 @@ class _ProductItemCardState extends State<_ProductItemCard> {
     );
     final showPreview =
         item.productName != null && selectedInvItem.itemName.isNotEmpty;
-    final remaining = selectedInvItem.currentStock - item.quantity;
-    final exceedsStock =
-        item.quantity > 0 && item.quantity > selectedInvItem.currentStock;
+
+    // Cross-unit stock preview:
+    // If the user enters quantity in the same unit as inventory, subtract directly.
+    // Cross-unit (e.g. 30 KG against 100 Bag inventory) cannot be computed client-side
+    // without bagWeight — show a neutral display instead of a wrong number.
+    final sameUnit = selectedInvItem.unit == item.inventoryUnit;
+    final remaining = sameUnit ? (selectedInvItem.currentStock - item.quantity) : 0.0;
+    final exceedsStock = sameUnit
+        ? (item.quantity > 0 && item.quantity > selectedInvItem.currentStock)
+        : false; // Let backend validate cross-unit quantities
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 20.0),
@@ -1237,8 +1267,11 @@ class _ProductItemCardState extends State<_ProductItemCard> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               value: safeDropdownValue,
-              decoration: _inputDecoration('Select product', Icons.shopping_basket_outlined),
+              decoration: _inputDecoration('Select product', Icons.shopping_basket_outlined).copyWith(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              ),
               items: buildDropdownItems(),
               onChanged: (v) {
                 setState(() => item.productName = v);
@@ -1247,15 +1280,32 @@ class _ProductItemCardState extends State<_ProductItemCard> {
               validator: (v) => v == null ? 'Select a product type' : null,
             ),
             const SizedBox(height: 16),
+
+            // ── Pricing Type (Per KG / Per Bag) ──────────────────────────
+            // Controls price calculation ONLY. Never modifies inventoryUnit.
+            Text('Pricing Type',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
             Row(
               children: [
-                Expanded(
-                  child: _buildToggle(item, 'Per KG'),
-                ),
+                Expanded(child: _buildPricingToggle(item, 'Per KG')),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: _buildToggle(item, 'Per Bag'),
-                ),
+                Expanded(child: _buildPricingToggle(item, 'Per Bag')),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Inventory Unit (KG / Bags) ────────────────────────────────
+            // Controls the unit sent to backend for stock deduction.
+            // Completely independent from Pricing Type.
+            Text('Inventory Unit',
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(child: _buildInventoryUnitToggle(item, 'KG')),
+                const SizedBox(width: 8),
+                Expanded(child: _buildInventoryUnitToggle(item, 'Bags')),
               ],
             ),
             const SizedBox(height: 16),
@@ -1322,14 +1372,21 @@ class _ProductItemCardState extends State<_ProductItemCard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    exceedsStock
-                        ? 'Not enough stock available'
-                        : 'Live remaining: ${remaining.toStringAsFixed(0)} ${selectedInvItem.unit}',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: exceedsStock ? Colors.red : Colors.green,
+                  Expanded(
+                    child: Text(
+                      () {
+                        if (exceedsStock) return 'Not enough stock available';
+                        if (!sameUnit) {
+                          // Cross-unit: show current stock only, backend handles conversion
+                          return 'Stock: ${selectedInvItem.currentStock.toStringAsFixed(2)} ${selectedInvItem.unit} (backend converts ${item.inventoryUnit} → ${selectedInvItem.unit})';
+                        }
+                        return 'Remaining: ${remaining.toStringAsFixed(2)} ${selectedInvItem.unit}';
+                      }(),
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: exceedsStock ? Colors.red : (!sameUnit ? Colors.orange : Colors.green),
+                      ),
                     ),
                   ),
                   if (exceedsStock)
@@ -1343,10 +1400,12 @@ class _ProductItemCardState extends State<_ProductItemCard> {
     );
   }
 
-  Widget _buildToggle(ProductItemEntry item, String type) {
+  /// Pricing type toggle — affects price calculation only.
+  Widget _buildPricingToggle(ProductItemEntry item, String type) {
     final isSelected = item.pricingType == type;
     return InkWell(
       onTap: () {
+        // Only update pricingType. Never touch inventoryUnit.
         setState(() => item.pricingType = type);
         widget.onChanged();
       },
@@ -1365,6 +1424,37 @@ class _ProductItemCardState extends State<_ProductItemCard> {
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             color: isSelected ? AppColors.primaryGreen : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Inventory unit toggle — controls the unit sent to backend for stock deduction.
+  /// Completely independent from pricingType.
+  Widget _buildInventoryUnitToggle(ProductItemEntry item, String unit) {
+    final isSelected = item.inventoryUnit == unit;
+    return InkWell(
+      onTap: () {
+        // Only update inventoryUnit. Never touch pricingType.
+        setState(() => item.inventoryUnit = unit);
+        widget.onChanged();
+      },
+      child: Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blue.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.3)),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          unit,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.blue : AppColors.textSecondary,
           ),
         ),
       ),

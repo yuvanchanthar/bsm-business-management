@@ -153,19 +153,6 @@ class ApiService {
       throw Exception(_extractError(e));
     }
   }
-  
-  /// GET /delivery/:id
-  Future<Delivery?> getDeliveryById(String id) async {
-    try {
-      final response = await _dio.get('/delivery/$id');
-      if (response.data != null && response.data is Map<String, dynamic>) {
-        return Delivery.fromJson(response.data as Map<String, dynamic>);
-      }
-      return null;
-    } on DioException catch (e) {
-      throw Exception(_extractError(e));
-    }
-  }
 
   /// POST /api/sales
   Future<Map<String, dynamic>> createCreditSale(Map<String, dynamic> payload) async {
@@ -227,6 +214,21 @@ class ApiService {
       final response = await _dio.get('/delivery');
       final data = _parseList(response.data);
       return data.map((json) => Delivery.fromJson(json as Map<String, dynamic>)).toList();
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  /// GET /delivery/:id
+  Future<Delivery> getDeliveryById(String id) async {
+    try {
+      final response = await _dio.get('/delivery/$id');
+      final data = response.data;
+      // Backend may return the document directly or wrapped in a key
+      if (data is Map<String, dynamic>) {
+        return Delivery.fromJson(data);
+      }
+      throw Exception('Unexpected response format for GET /delivery/$id');
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }

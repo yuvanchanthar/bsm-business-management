@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../core/app_colors.dart';
+import '../core/stock_format.dart';
 import '../models/customer_statement_model.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
@@ -348,7 +349,7 @@ class _DeliveryCard extends StatelessWidget {
             const Icon(Icons.circle, size: 6, color: AppColors.textSecondary),
             const SizedBox(width: 8),
             Expanded(child: Text(item.name, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary))),
-            if (item.quantity > 0) Text('${item.quantity.toStringAsFixed(0)}${item.unit != null ? " ${item.unit}" : ""}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+            if (item.quantity > 0) Text('${fmtStock(item.quantity)}${item.unit != null ? " ${item.unit}" : ""}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
           ]),
         )),
       ],
@@ -423,7 +424,7 @@ class _CreditSaleCardState extends State<_CreditSaleCard> {
               Text('Purchased Items', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary, letterSpacing: 0.5)),
               const SizedBox(height: 8),
               ...t.items.map((item) {
-                final qty = item.quantity.toStringAsFixed(0);
+                final qty = fmtStock(item.quantity);
                 final unit = (item.unit == null || item.unit!.isEmpty) ? 'Bag' : item.unit!;
                 final price = item.price != null ? '₹${item.price!.toStringAsFixed(0)}' : '';
                 final total = item.total != null ? item.total! : (item.price != null ? item.price! * item.quantity : 0.0);

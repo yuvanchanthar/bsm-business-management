@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
 import '../models/inventory_model.dart';
 import '../repositories/inventory_repository.dart';
+import '../core/stock_format.dart';
 import '../widgets/add_existing_stock_dialog.dart';
 
 class InventoryDetailScreen extends StatefulWidget {
@@ -69,7 +70,7 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
     final result = await showDialog<double>(
       context: context,
       builder: (_) => _ThresholdDialog(
-        initialValue: item.threshold.toStringAsFixed(0),
+        initialValue: fmtStock(item.threshold),
       ),
     );
 
@@ -189,14 +190,14 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
                                 style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white))),
                           ]),
                           const SizedBox(height: 8),
-                          Text('${item!.currentStock.toStringAsFixed(0)} ${item.unit}',
+                          Text('${fmtStock(item!.currentStock)} ${item!.unit}',
                             style: GoogleFonts.inter(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 16),
                           Row(children: [
-                            _StatPill(label: 'Threshold', value: '${item.threshold.toStringAsFixed(0)} ${item.unit}'),
+                            _StatPill(label: 'Threshold', value: '${fmtStock(item!.threshold)} ${item!.unit}'),
                             const SizedBox(width: 12),
-                            if (item.lastUpdated != null)
-                              _StatPill(label: 'Updated', value: _fmtDate(item.lastUpdated!)),
+                            if (item!.lastUpdated != null)
+                              _StatPill(label: 'Updated', value: _fmtDate(item!.lastUpdated!)),
                           ]),
                         ]),
                       ),
@@ -236,8 +237,8 @@ class _InventoryDetailScreenState extends State<InventoryDetailScreen> {
                                   showDialog(
                                     context: context,
                                     builder: (_) => AddExistingStockDialog(
-                                      preSelectedItem: item,
-                                      allItems: [item],
+                                      preSelectedItem: item!,
+                                      allItems: [item!],
                                       onSaved: _fetch,
                                     ),
                                   );
@@ -424,7 +425,7 @@ class _HistoryTile extends StatelessWidget {
               style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
           ]),
         ])),
-        Text('$_sign${entry.quantity.toStringAsFixed(0)}',
+        Text('$_sign${fmtStock(entry.quantity)}',
           style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.bold, color: _color)),
       ]),
     );

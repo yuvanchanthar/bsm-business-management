@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/app_colors.dart';
-import '../models/category_model.dart';
 import '../models/inventory_model.dart';
 import '../repositories/inventory_repository.dart';
+import '../core/stock_format.dart';
+import '../models/category_model.dart';
 
 /// Dialog for editing an existing inventory item.
 /// Pre-fills [item] values; on save calls PUT /inventory/:id via [InventoryRepository].
@@ -43,10 +44,10 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
     _nameCtrl = TextEditingController(text: widget.item.itemName);
     _unitCtrl = TextEditingController(text: widget.item.unit);
     _thresholdCtrl = TextEditingController(
-      text: widget.item.threshold.toStringAsFixed(0),
+      text: fmtStock(widget.item.threshold),
     );
     stockController = TextEditingController(
-      text: widget.item.currentStock.toInt().toString(),
+      text: fmtStock(widget.item.currentStock),
     );
     stockNoteController = TextEditingController();
     // Pre-select category if a matching one exists in the list.
@@ -73,7 +74,7 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final stockText = stockController.text.trim();
-    final parsedStock = int.tryParse(stockText);
+    final parsedStock = double.tryParse(stockText);
     if (stockText.isEmpty || parsedStock == null || parsedStock < 0) {
       _showSnack("Please enter a valid stock value", Colors.red);
       return;
@@ -87,8 +88,8 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
 
     setState(() => _isSaving = true);
     try {
-      final originalStock = widget.item.currentStock.toInt();
-      int? currentStockToSend;
+      final originalStock = widget.item.currentStock;
+      double? currentStockToSend;
       String? stockCorrectionNoteToSend;
 
       if (parsedStock != originalStock) {
@@ -203,7 +204,7 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
                   ),
                   hint: Text('Select Category', style: GoogleFonts.inter(fontSize: 14)),
                   items: widget.categories.map((c) {
-                    return DropdownMenuItem(
+                    return DropdownMenuItem<String>(
                       value: c.name,
                       child: Text(c.name, style: GoogleFonts.inter()),
                     );
@@ -260,7 +261,7 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
                 Row(children: [
                   Expanded(
                     child: TextFormField(
-                      initialValue: widget.item.currentStock.toInt().toString(),
+                      initialValue: fmtStock(widget.item.currentStock),
                       enabled: false,
                       style: GoogleFonts.inter(color: Colors.grey[600]),
                       decoration: InputDecoration(
@@ -282,7 +283,7 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
                   Expanded(
                     child: TextFormField(
                       controller: stockController,
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         labelText: 'New Stock Value',
                         hintText: 'Enter corrected stock count',
@@ -295,7 +296,7 @@ class _EditInventoryItemDialogState extends State<EditInventoryItemDialog> {
                       ),
                       validator: (v) {
                         if (v == null || v.trim().isEmpty) return 'Required';
-                        final val = int.tryParse(v.trim());
+                        final val = double.tryParse(v.trim());
                         if (val == null || val < 0) return 'Must be >= 0';
                         return null;
                       },

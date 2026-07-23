@@ -333,10 +333,12 @@ class SupplierService {
     required double quantity,
     required String reason,
     String notes = '',
+    required String unit,
   }) async {
     try {
       await _dio.post('/inventory/$itemId/stock', data: {
         'quantity': quantity,
+        'unit': unit,
         'reason': reason,
         'notes': notes,
       });
@@ -404,12 +406,14 @@ class SupplierService {
     required String category,
     required String unit,
     required double threshold,
+    double? bagWeight,
   }) async {
     try {
       await _dio.post('/inventory/item', data: {
         'categoryName': category,
         'itemName': itemName,
         'unit': unit,
+        'bagWeight': bagWeight,
         'lowStockThreshold': threshold,
       });
       return true;
@@ -425,8 +429,9 @@ class SupplierService {
     String? itemName,
     String? categoryName,
     String? unit,
+    double? bagWeight,
     double? lowStockThreshold,
-    int? currentStock,
+    double? currentStock,
     String? stockCorrectionNote,
   }) async {
     try {
@@ -434,6 +439,7 @@ class SupplierService {
       if (itemName != null) body['itemName'] = itemName;
       if (categoryName != null) body['categoryName'] = categoryName;
       if (unit != null) body['unit'] = unit;
+      if (bagWeight != null) body['bagWeight'] = bagWeight;
       if (lowStockThreshold != null) body['lowStockThreshold'] = lowStockThreshold;
       if (currentStock != null) {
         body['currentStock'] = currentStock;

@@ -171,7 +171,6 @@ class TemplateProvider extends ChangeNotifier {
       // Step 2: Re-fetch full delivery to get updated invoice object
       debugPrint('[TemplateProvider] RE-FETCHING delivery "${delivery.id}"');
       final fullDelivery = await _apiService.getDeliveryById(delivery.id);
-      if (fullDelivery == null) throw Exception('Failed to re-fetch delivery after update');
 
       // Step 3: Generate PDF using the persisted templateId (from backend)
       final finalTemplateId = fullDelivery.invoice?.templateId ?? templateId;

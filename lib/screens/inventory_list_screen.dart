@@ -10,6 +10,7 @@ import '../widgets/add_category_dialog.dart';
 import '../widgets/add_inventory_item_dialog.dart';
 import '../widgets/add_existing_stock_dialog.dart';
 import '../widgets/edit_inventory_item_dialog.dart';
+import '../core/stock_format.dart';
 import 'inventory_detail_screen.dart';
 import 'inventory_category_items_screen.dart';
 
@@ -477,7 +478,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> with SingleTi
                                       Text(cat.name, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '${cat.itemCount} Item${cat.itemCount == 1 ? '' : 's'}  •  ${cat.totalStock.toStringAsFixed(0)} ${cat.unit}',
+                                        '${cat.itemCount} Item${cat.itemCount == 1 ? '' : 's'}  •  ${fmtStock(cat.totalStock)} ${cat.unit}',
                                         style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                                       ),
                                       if (cat.lowStockCount > 0)
@@ -672,7 +673,7 @@ class _InventoryCard extends StatelessWidget {
               Text(item.itemName, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
               if (item.category != null && item.category!.isNotEmpty)
                 Text(item.category!, style: GoogleFonts.inter(fontSize: 11, color: _c, fontWeight: FontWeight.w600)),
-              Text('Threshold: ${item.threshold.toStringAsFixed(0)} ${item.unit}',
+              Text('Threshold: ${fmtStock(item.threshold)} ${item.unit}',
                 style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
             ])),
             Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -710,7 +711,7 @@ class _InventoryCard extends StatelessWidget {
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Current Stock', style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
-              Text('${item.currentStock.toStringAsFixed(0)} ${item.unit}',
+              Text('${fmtStock(item.currentStock)} ${item.unit}',
                 style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.bold, color: _c)),
             ]),
             if (item.isLowStock || item.isOutOfStock)
@@ -730,7 +731,7 @@ class _InventoryCard extends StatelessWidget {
           const SizedBox(height: 4),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('0', style: GoogleFonts.inter(fontSize: 10, color: AppColors.textHint)),
-            Text('Min: ${item.threshold.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary)),
+            Text('Min: ${fmtStock(item.threshold)}', style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary)),
           ]),
         ]),
       ),

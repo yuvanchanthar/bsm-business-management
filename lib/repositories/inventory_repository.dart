@@ -47,6 +47,7 @@ class InventoryRepository {
   Future<void> addStock({
     required String itemId,
     required double quantity,
+    required String unit,
     required String reason,
     String notes = '',
   }) async {
@@ -54,6 +55,7 @@ class InventoryRepository {
     await svc.addStockEntry(
       itemId: itemId,
       quantity: quantity,
+      unit: unit,
       reason: reason,
       notes: notes,
     );
@@ -67,7 +69,7 @@ class InventoryRepository {
     String? categoryName,
     String? unit,
     double? lowStockThreshold,
-    int? currentStock,
+    double? currentStock,
     String? stockCorrectionNote,
   }) async {
     final svc = await _svc();

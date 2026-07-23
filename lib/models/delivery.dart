@@ -136,10 +136,18 @@ class ProductItem {
   double get totalAmount => quantity * pricePerUnit;
 
   Map<String, dynamic> toJson() => {
-        // Primary keys used by backend
+        // FIX 2: Send both naming conventions for backward + forward compatibility.
+        // Backend accepts 'itemName' (new) and 'product' (legacy) — send both.
+        'itemName': name,
         'product': name,
+
+        // Send both 'quantity' (new) and 'qty' (legacy) — backend accepts either.
+        'quantity': quantity,
         'qty': quantity,
-        'unit': unit,
+
+        'unit': unit,              // inventory deduction unit (KG or Bags) — independent
+        'pricingType': pricingType, // pricing mode (Per KG or Per Bag) — independent
+
         'price': pricePerUnit,
         'cost': costPerUnit,
         'total': totalAmount,
@@ -147,10 +155,13 @@ class ProductItem {
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
     return ProductItem(
-      name: json['product'] ?? json['productType'] ?? '',
+      name: json['product'] ?? json['productType'] ?? json['itemName'] ?? '',
       quantity: _asDouble(json['qty'] ?? json['quantity']),
       unit: json['unit'] ?? '',
-      pricingType: json['unit'] == 'KG' ? 'Per KG' : 'Per Bag',
+      // FIX 1: Read pricingType directly from backend field.
+      // Falls back to unit-derived value for old deliveries that lack pricingType.
+      pricingType: json['pricingType']?.toString() ??
+          (json['unit'] == 'KG' ? 'Per KG' : 'Per Bag'),
       pricePerUnit: _asDouble(json['price']),
       costPerUnit: _asDouble(json['cost']),
     );
@@ -228,6 +239,10 @@ class Delivery {
     print('[PAYLOAD] deliveryTotal   : $deliveryTotal');
     print('[PAYLOAD] resolvedTotal   : $resolvedTotal  (grandTotal sent)');
     print('[PAYLOAD] resolvedAmount  : $resolvedAmount');
+    // FIX 3: Print serialized items so unit/pricingType can be verified before each save.
+    print('========== DELIVERY ITEMS ==========');
+    print(src.map((e) => e.toJson()).toList());
+    print('====================================');
     print('============================================');
 
     return {
