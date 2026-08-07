@@ -1212,8 +1212,14 @@ BSM Agro Industry
 
   final balance = _ledger!.finalBalance;
 
+  final now = DateTime.now();
+  final statementDate = DateFormat('dd-MM-yyyy (EEEE)').format(now);
+
   final message = '''
-Hello ${customer.name},
+BSM Agro Industry
+Statement Date: $statementDate
+
+Dear ${customer.name},
 
 Your pending balance is ₹${balance.abs().toStringAsFixed(0)}.
 
@@ -1278,8 +1284,12 @@ BSM Agro Industry
       return;
     }
 
+    final now = DateTime.now();
+    final statementDate = DateFormat('dd-MM-yyyy (EEEE)').format(now);
+
     final String message = '''
 BSM Agro Industry
+Statement Date: $statementDate
 
 Dear ${customer.name},
 

@@ -80,6 +80,8 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
       entry.pricingType = item.pricingType.isNotEmpty ? item.pricingType : 'Per KG';
       entry.inventoryUnit = item.unit.isNotEmpty ? item.unit : 'KG';
       entry.pricePerUnit = item.pricePerUnit;
+      entry.priceController.text = item.pricePerUnit.toString();
+entry.qtyController.text = fmtStock(item.quantity);
       _productEntries.add(entry);
     }
     if (_productEntries.isEmpty) _productEntries.add(ProductItemEntry());
@@ -493,20 +495,28 @@ class _EditDeliveryScreenState extends State<EditDeliveryScreen> {
 
                           Row(children: [
                             Expanded(flex: 2, child: TextFormField(
-                              initialValue: item.pricePerUnit.toString(),
+                              //initialValue: item.pricePerUnit.toString(),
+                              controller: item.priceController,
                               decoration: _inputDecoration(
                                 'Price / ${item.pricingType == 'Per KG' ? 'KG' : 'Bag'}',
                                 Icons.payments_outlined),
                               keyboardType: TextInputType.number,
-                              onChanged: (v) => setState(() => item.pricePerUnit = double.tryParse(v) ?? 0),
+                              onChanged: (v) {
+  item.pricePerUnit = double.tryParse(v) ?? 0;
+  setState(() {});
+},
                               validator: (v) => (double.tryParse(v ?? '') ?? 0) <= 0 ? 'Invalid rate' : null,
                             )),
                             const SizedBox(width: 12),
                             Expanded(child: TextFormField(
-                              initialValue: fmtStock(item.quantity),
+                             // initialValue: fmtStock(item.quantity),
+                              controller: item.qtyController,
                               decoration: _inputDecoration('Qty', Icons.numbers),
                               keyboardType: TextInputType.number,
-                              onChanged: (v) => setState(() => item.quantity = double.tryParse(v) ?? 0),
+                              onChanged: (v) {
+  item.quantity = double.tryParse(v) ?? 0;
+  setState(() {});
+},
                               validator: (v) => (double.tryParse(v ?? '') ?? 0) <= 0 ? '?' : null,
                             )),
                           ]),

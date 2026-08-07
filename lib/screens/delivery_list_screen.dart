@@ -331,6 +331,9 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
     final customerPhone = delivery.customerPhone;
     if (customerPhone == null || customerPhone.isEmpty) return;
 
+    final now = DateTime.now();
+    final statementDate = DateFormat('dd-MM-yyyy (EEEE)').format(now);
+
     final StringBuffer productsBuffer = StringBuffer();
     for (var p in delivery.products) {
       productsBuffer.writeln('${p.name} - ${fmtStock(p.quantity)} ${p.unit}');
@@ -338,6 +341,7 @@ class _DeliveryListScreenState extends State<DeliveryListScreen> {
 
     final String message = '''
 BSM Agro Industry
+Statement Date: $statementDate
 
 Dear ${delivery.customerName},
 

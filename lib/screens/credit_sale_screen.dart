@@ -210,17 +210,34 @@ class _CreditSaleScreenState extends State<CreditSaleScreen> {
       ));
       return;
     }
-    final maxOutstanding = _prevBalance + _currentSalePending;
-    if (_outstandingPayment > maxOutstanding) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    final currentBalance = _prevBalance + _currentSalePending;
+
+// Customer still has advance
+if (currentBalance <= 0) {
+  if (_outstandingPayment > 0) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
         content: Text(
-          'Outstanding Payment (₹${_outstandingPayment.toStringAsFixed(0)}) cannot exceed '
-          'Previous Balance + Pending Amount (₹${maxOutstanding.toStringAsFixed(0)}).'
+          'Customer has advance balance. Outstanding Payment should be 0.',
         ),
         backgroundColor: Colors.red,
-      ));
-      return;
-    }
+      ),
+    );
+    return;
+  }
+} else {
+  if (_outstandingPayment > currentBalance) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Outstanding Payment cannot exceed Current Balance (₹${currentBalance.toStringAsFixed(0)}).',
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+}
 
     final itemIds = _products.map((p) => p.item!.id).toSet();
     if (itemIds.length < _products.length) {

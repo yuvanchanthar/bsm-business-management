@@ -400,8 +400,14 @@ class _AddPaymentScreenState extends State<AddPaymentScreen> {
 
     final fmt = NumberFormat('#,##,###');
 
+    final now = DateTime.now();
+    final statementDate = DateFormat('dd-MM-yyyy (EEEE)').format(now);
+
     // ── SMS body ───────────────────────────────────────────────────────────
     final StringBuffer buf = StringBuffer();
+    buf.writeln('BSM Agro Industry');
+    buf.writeln('Statement Date: $statementDate');
+    buf.writeln();
     buf.writeln('Hello ${widget.labourName},');
     buf.writeln();
     buf.writeln('Payment processed successfully.');
